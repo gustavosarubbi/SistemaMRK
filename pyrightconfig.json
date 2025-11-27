@@ -1,0 +1,5 @@
+{
+  "include": ["backend", "force_sync.py", "inspect_db.py", "run_api.py"],
+  "extraPaths": ["backend"]
+}
+
