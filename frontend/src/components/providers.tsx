@@ -8,6 +8,10 @@ export default function Providers({ children }: { children: React.ReactNode }) {
     defaultOptions: {
       queries: {
         staleTime: 60 * 1000, // 1 minute
+        retry: 1, // Limita a 1 tentativa de retry (ao invés do padrão 3)
+        retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000), // Backoff exponencial
+        refetchOnWindowFocus: false, // Evita refetch automático ao focar na janela
+        refetchOnReconnect: true, // Apenas refaz quando reconecta à internet
       },
     },
   }));

@@ -164,3 +164,4 @@ Se a sincronização falhar por falta de espaço no banco:
 - Confirme se `NEXT_PUBLIC_API_URL` no `.env.local` está exatamente `http://localhost:8000`.
 - Verifique o console do navegador (F12) para erros de rede.
 
+

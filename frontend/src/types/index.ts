@@ -33,6 +33,7 @@ export interface Project {
     CTT_ANADES?: string;
     realized?: number;
     usage_percent?: number;
+    initial_balance?: number;
 }
 
 export interface PaginatedResponse<T> {

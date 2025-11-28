@@ -58,4 +58,17 @@ api.interceptors.response.use(
   }
 );
 
+// Validation API methods
+export const validationApi = {
+  getStats: () => api.get('/validation/stats'),
+  listRecords: (table: string, params?: any) => api.get(`/validation/${table}`, { params }),
+  getRecord: (table: string, recordId: string) => api.get(`/validation/${table}/${recordId}`),
+  updateRecord: (table: string, recordId: string, updates: any) => api.put(`/validation/${table}/${recordId}`, updates),
+  approveRecord: (table: string, recordId: string) => api.post(`/validation/${table}/${recordId}/approve`),
+  rejectRecord: (table: string, recordId: string, rejectionReason: string) => 
+    api.post(`/validation/${table}/${recordId}/reject`, { rejection_reason: rejectionReason }),
+  getProjectForValidation: (custo: string) => api.get(`/validation/project/${custo}`),
+  approveProjectAll: (custo: string) => api.post(`/validation/project/${custo}/approve-all`),
+};
+
 export default api;

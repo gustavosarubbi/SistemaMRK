@@ -31,6 +31,9 @@ class Settings:
     LOCAL_DB_ENCRYPT = os.getenv("LOCAL_DB_ENCRYPT", "false").lower() == "true"
     LOCAL_DB_TRUST_SERVER_CERTIFICATE = os.getenv("LOCAL_DB_TRUST_SERVER_CERTIFICATE", "true").lower() == "true"
     
+    # Database Local Validated (Dados Validados)
+    LOCAL_DB_NAME_VALIDATED = os.getenv("LOCAL_DB_NAME_VALIDATED", "SistemaMRK_Validated")
+    
     # Admin Simple Auth
     ADMIN_USER = os.getenv("ADMIN_USER", "admin")
     ADMIN_PASS = os.getenv("ADMIN_PASS", "admin")
@@ -60,6 +63,24 @@ class Settings:
             
         driver = "ODBC Driver 17 for SQL Server"
         params = f"DRIVER={{{driver}}};SERVER={self.LOCAL_DB_SERVER},{self.LOCAL_DB_PORT};DATABASE={self.LOCAL_DB_NAME};UID={self.LOCAL_DB_USER};PWD={self.LOCAL_DB_PASSWORD}"
+        
+        if self.LOCAL_DB_ENCRYPT:
+            params += ";Encrypt=yes"
+        else:
+            params += ";Encrypt=no"
+            
+        if self.LOCAL_DB_TRUST_SERVER_CERTIFICATE:
+            params += ";TrustServerCertificate=yes"
+            
+        return f"mssql+pyodbc:///?odbc_connect={params}"
+
+    @property
+    def SQLALCHEMY_DATABASE_URI_LOCAL_VALIDATED(self) -> str:
+        if not self.LOCAL_DB_SERVER:
+            return "sqlite:///./validated.db"
+            
+        driver = "ODBC Driver 17 for SQL Server"
+        params = f"DRIVER={{{driver}}};SERVER={self.LOCAL_DB_SERVER},{self.LOCAL_DB_PORT};DATABASE={self.LOCAL_DB_NAME_VALIDATED};UID={self.LOCAL_DB_USER};PWD={self.LOCAL_DB_PASSWORD}"
         
         if self.LOCAL_DB_ENCRYPT:
             params += ";Encrypt=yes"

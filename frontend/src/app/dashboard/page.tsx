@@ -1,24 +1,38 @@
 'use client';
 
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import api from '@/lib/api';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { DashboardData } from '@/types';
-import { Briefcase, DollarSign, Wallet, TrendingUp, TrendingDown } from 'lucide-react';
+import { format } from "date-fns";
+import { KPICards } from '@/components/dashboard/kpi-cards';
+import { TopProjectsBarChart } from '@/components/dashboard/charts/top-projects-bar-chart';
+import { BudgetTrendLineChart } from '@/components/dashboard/charts/budget-trend-line-chart';
+import { DashboardFilters } from '@/components/dashboard/dashboard-filters';
+import { PageHeader } from '@/components/layout/page-header';
 
 export default function DashboardPage() {
+    const [startDate, setStartDate] = useState<Date | undefined>(new Date(2023, 0, 1));
+    const [endDate, setEndDate] = useState<Date | undefined>(undefined);
+
     const { data, isLoading, error } = useQuery<DashboardData>({
-        queryKey: ['dashboard-summary'],
+        queryKey: ['dashboard-summary', startDate, endDate],
         queryFn: async () => {
-            const res = await api.get('/dashboard/summary');
+            const params = new URLSearchParams();
+            if (startDate) params.append('start_date', format(startDate, 'yyyy-MM-dd'));
+            if (endDate) params.append('end_date', format(endDate, 'yyyy-MM-dd'));
+            const res = await api.get(`/dashboard/summary?${params.toString()}`);
             return res.data;
         },
         refetchInterval: 30000, // 30 seconds
+        retry: 1, // Limita retries para evitar loops infinitos
+        refetchOnWindowFocus: false, // Evita refetch automático ao focar na janela
     });
 
-    const formatCurrency = (value: number) => {
-        return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
+    const clearFilters = () => {
+        setStartDate(undefined);
+        setEndDate(undefined);
     };
 
     if (isLoading) {
@@ -38,7 +52,7 @@ export default function DashboardPage() {
                         </Card>
                     ))}
                 </div>
-                <div className="h-[400px] w-full bg-muted animate-pulse rounded-lg"></div>
+                <div className="h-[300px] w-full bg-muted animate-pulse rounded-lg"></div>
             </div>
         );
     }
@@ -56,107 +70,27 @@ export default function DashboardPage() {
 
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
-            <div>
-                <h2 className="text-3xl font-bold tracking-tight">Visão Geral</h2>
-                <p className="text-muted-foreground">Acompanhe o desempenho financeiro dos projetos.</p>
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b pb-4">
+                <PageHeader
+                    title="Visão Geral"
+                    description="Monitore o desempenho e atividade do sistema"
+                    breadcrumbItems={[{ label: 'Visão Geral' }]}
+                />
+                
+                <DashboardFilters 
+                    startDate={startDate}
+                    setStartDate={setStartDate}
+                    endDate={endDate}
+                    setEndDate={setEndDate}
+                    clearFilters={clearFilters}
+                />
             </div>
 
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                <Card>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium text-muted-foreground">Total Projetos</CardTitle>
-                        <Briefcase className="h-4 w-4 text-muted-foreground" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold">{kpis.total_projects}</div>
-                        <p className="text-xs text-muted-foreground mt-1">Projetos ativos no sistema</p>
-                    </CardContent>
-                </Card>
-
-                <Card>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium text-muted-foreground">Orçamento Total</CardTitle>
-                        <DollarSign className="h-4 w-4 text-muted-foreground" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold text-foreground">
-                            {formatCurrency(kpis.total_budget)}
-                        </div>
-                        <p className="text-xs text-muted-foreground mt-1">Previsto em projetos</p>
-                    </CardContent>
-                </Card>
-
-                <Card>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium text-muted-foreground">Realizado Total</CardTitle>
-                        <TrendingUp className="h-4 w-4 text-blue-500" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold text-blue-600">
-                            {formatCurrency(kpis.total_realized)}
-                        </div>
-                        <p className="text-xs text-muted-foreground mt-1">Executado até o momento</p>
-                    </CardContent>
-                </Card>
-
-                <Card>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium text-muted-foreground">Saldo</CardTitle>
-                        <Wallet className={`h-4 w-4 ${kpis.balance < 0 ? 'text-red-500' : 'text-green-500'}`} />
-                    </CardHeader>
-                    <CardContent>
-                        <div className={`text-2xl font-bold ${kpis.balance < 0 ? 'text-red-500' : 'text-green-500'}`}>
-                            {formatCurrency(kpis.balance)}
-                        </div>
-                        <p className="text-xs text-muted-foreground mt-1">Disponível para execução</p>
-                    </CardContent>
-                </Card>
-            </div>
+            <KPICards kpis={kpis} />
             
-            <div className="grid gap-4 md:grid-cols-1 lg:grid-cols-7">
-                <Card className="col-span-7">
-                    <CardHeader>
-                        <CardTitle>Top Projetos (Orçamento)</CardTitle>
-                    </CardHeader>
-                    <CardContent className="pl-2">
-                        <div className="h-[350px] w-full">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <BarChart data={charts.top_projects} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                                    <XAxis 
-                                        dataKey="name" 
-                                        stroke="#888888" 
-                                        fontSize={12} 
-                                        tickLine={false} 
-                                        axisLine={false} 
-                                        tickFormatter={(value) => value.length > 20 ? `${value.substring(0, 20)}...` : value}
-                                        dy={10}
-                                    />
-                                    <YAxis
-                                        stroke="#888888"
-                                        fontSize={12}
-                                        tickLine={false}
-                                        axisLine={false}
-                                        tickFormatter={(value) => `R$${value/1000}k`}
-                                    />
-                                    <Tooltip 
-                                        formatter={(value: number) => formatCurrency(value)}
-                                        contentStyle={{ 
-                                            backgroundColor: 'hsl(var(--card))', 
-                                            borderColor: 'hsl(var(--border))', 
-                                            borderRadius: 'var(--radius)' 
-                                        }}
-                                        cursor={{fill: 'hsl(var(--muted))', opacity: 0.2}}
-                                    />
-                                    <Bar dataKey="value" radius={[4, 4, 0, 0]} barSize={40}>
-                                        {charts.top_projects.map((entry, index) => (
-                                            <Cell key={`cell-${index}`} fill={index % 2 === 0 ? "hsl(var(--primary))" : "hsl(var(--primary)/0.8)"} />
-                                        ))}
-                                    </Bar>
-                                </BarChart>
-                            </ResponsiveContainer>
-                        </div>
-                    </CardContent>
-                </Card>
+            <div className="grid gap-6 md:grid-cols-1 lg:grid-cols-2">
+                 <TopProjectsBarChart data={charts.top_projects} />
+                 <BudgetTrendLineChart />
             </div>
         </div>
     );

@@ -93,13 +93,32 @@ class SyncService:
 
             logger.info(f"Discovered {len(columns)} columns for {table_name}.")
             
+            # Get primary key information from remote
+            pk_constraint = inspector.get_pk_constraint(table_name)
+            pk_columns = set(pk_constraint.get('constrained_columns', []))
+            
+            if pk_columns:
+                logger.info(f"Found primary key columns: {', '.join(pk_columns)}")
+            else:
+                # Fallback: Use model definitions for primary keys
+                from app.models.protheus import CTT010, PAC010, PAD010
+                pk_map = {
+                    "CTT010": ["CTT_CUSTO"],
+                    "PAC010": ["R_E_C_N_O_"],
+                    "PAD010": ["R_E_C_N_O_"]
+                }
+                if table_name in pk_map:
+                    pk_columns = set(pk_map[table_name])
+                    logger.info(f"Using model-defined primary key: {', '.join(pk_columns)}")
+            
             # 2. Recreate Local Table
             local_metadata = MetaData()
             safe_columns = []
             for col in columns:
                 col_name = col['name']
                 col_type = col['type']
-                safe_columns.append(Column(col_name, col_type, autoincrement=False))
+                is_primary = col_name in pk_columns
+                safe_columns.append(Column(col_name, col_type, primary_key=is_primary, autoincrement=False))
 
             local_table = Table(table_name, local_metadata, *safe_columns)
             

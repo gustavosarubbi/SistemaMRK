@@ -40,3 +40,4 @@ if __name__ == "__main__":
     # Listar tabelas Z se possível, ou chutar nomes comuns se soubéssemos
     # Como não sabemos, vamos focar nas padrões.
 
+
