@@ -18,13 +18,18 @@ import { ProgressBar } from '@/components/ui/progress-bar';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Project, PaginatedResponse } from '@/types';
-import { Search, X, ArrowRight, AlertCircle, FileText, Filter, Calendar, User, Building2, RotateCcw, CheckCircle2 } from 'lucide-react';
+import { Search, X, ArrowRight, AlertCircle, FileText, Filter, Calendar, User, Building2, RotateCcw, CheckCircle2, Clock } from 'lucide-react';
 import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatCurrency } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
+
+import { ProjectStatsCards } from '@/components/dashboard/project-stats-cards';
+import { ProjectTimeline } from '@/components/dashboard/project-timeline';
+import { ProjectAlerts } from '@/components/dashboard/project-alerts';
+import { getProjectClassification, getServiceType } from '@/lib/project-mappings';
 
 export default function ProjectsPage() {
     const [search, setSearch] = useState('');
@@ -33,11 +38,25 @@ export default function ProjectsPage() {
     const [endDate, setEndDate] = useState('');
     const [filterCoordinator, setFilterCoordinator] = useState('');
     const [filterClient, setFilterClient] = useState('');
+    const [filterStatus, setFilterStatus] = useState('');
     const [showApprovedOnly, setShowApprovedOnly] = useState(false);
     const limit = 10; // Items per page
     
+    // Fetch filter options (Coordinators and Clients)
+    const { data: filterOptions } = useQuery({
+        queryKey: ['project-options'],
+        queryFn: async () => {
+            const res = await api.get('/projects/options');
+            return res.data;
+        },
+        refetchOnWindowFocus: false,
+    });
+
+    const uniqueCoordinators = filterOptions?.coordinators || [];
+    const uniqueClients = filterOptions?.units || [];
+
     const { data, isLoading, error, refetch } = useQuery<PaginatedResponse<Project>>({
-        queryKey: ['projects', search, page, startDate, endDate, filterCoordinator, filterClient],
+        queryKey: ['projects', search, page, startDate, endDate, filterCoordinator, filterClient, filterStatus],
         queryFn: async () => {
             const params = new URLSearchParams();
             if (search) params.append('search', search);
@@ -45,6 +64,7 @@ export default function ProjectsPage() {
             if (endDate) params.append('end_date', endDate);
             if (filterCoordinator) params.append('coordinator', filterCoordinator);
             if (filterClient) params.append('client', filterClient);
+            if (filterStatus) params.append('status', filterStatus);
             
             params.append('page', page.toString());
             params.append('limit', limit.toString());
@@ -72,10 +92,6 @@ export default function ProjectsPage() {
     
     const totalPages = data?.total_pages || 1;
 
-    // Obter valores únicos para selects (usando todos os dados se disponível, senão apenas os carregados)
-    const uniqueCoordinators = Array.from(new Set(projects.map(p => p.CTT_NOMECO).filter((c): c is string => Boolean(c)))).sort();
-    const uniqueClients = Array.from(new Set(projects.map(p => p.CTT_UNIDES).filter(Boolean))).sort();
-
     const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
         setSearch(e.target.value);
         setPage(1); 
@@ -87,6 +103,7 @@ export default function ProjectsPage() {
         setEndDate('');
         setFilterCoordinator('');
         setFilterClient('');
+        setFilterStatus('');
         setShowApprovedOnly(false);
         setPage(1);
     };
@@ -95,6 +112,30 @@ export default function ProjectsPage() {
         if (!dateStr || dateStr.length !== 8) return '-';
         // YYYYMMDD -> DD/MM/YYYY
         return `${dateStr.substring(6, 8)}/${dateStr.substring(4, 6)}/${dateStr.substring(0, 4)}`;
+    };
+
+    const getVigenciaBadge = (dtIni: string, dtFim: string) => {
+        if (!dtIni || !dtFim || dtIni.length !== 8 || dtFim.length !== 8) return null;
+        
+        // Convert dates from YYYYMMDD
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        const start = new Date(Number(dtIni.substring(0, 4)), Number(dtIni.substring(4, 6)) - 1, Number(dtIni.substring(6, 8)));
+        const end = new Date(Number(dtFim.substring(0, 4)), Number(dtFim.substring(4, 6)) - 1, Number(dtFim.substring(6, 8)));
+        
+        const endPlus60 = new Date(end);
+        endPlus60.setDate(endPlus60.getDate() + 60);
+        
+        if (today >= start && today <= end) {
+            return <Badge variant="success" className="text-[10px] h-5 px-1.5 whitespace-nowrap">Em Execução</Badge>;
+        } else if (today > end && today <= endPlus60) {
+            return <Badge variant="warning" className="text-[10px] h-5 px-1.5 whitespace-nowrap">Prestar Contas</Badge>;
+        } else if (today > endPlus60) {
+            return <Badge variant="secondary" className="text-[10px] h-5 px-1.5 whitespace-nowrap">Finalizado</Badge>;
+        } else {
+             return <Badge variant="outline" className="text-[10px] h-5 px-1.5 whitespace-nowrap">Não Iniciado</Badge>;
+        }
     };
 
     const getStatusBadge = (usagePercent: number) => {
@@ -109,7 +150,7 @@ export default function ProjectsPage() {
         }
     };
 
-    const activeFiltersCount = [search, endDate, filterCoordinator, filterClient, showApprovedOnly].filter(Boolean).length + (startDate !== '2023-01-01' ? 1 : 0);
+    const activeFiltersCount = [search, endDate, filterCoordinator, filterClient, filterStatus, showApprovedOnly].filter(Boolean).length + (startDate !== '2023-01-01' ? 1 : 0);
     
     const hasActiveFilters = activeFiltersCount > 0;
 
@@ -121,13 +162,17 @@ export default function ProjectsPage() {
                     description="Gerencie e acompanhe o status financeiro dos projetos"
                     breadcrumbItems={[{ label: 'Projetos' }]}
                 />
-                {data && (
-                    <div className="text-left sm:text-right">
-                        <div className="text-2xl font-bold">{data.total || 0}</div>
-                        <div className="text-xs text-muted-foreground">Total de projetos</div>
-                    </div>
-                )}
             </div>
+
+            {/* KPI Cards */}
+            <ProjectStatsCards 
+                stats={data?.stats} 
+                onFilterClick={(status) => {
+                    setFilterStatus(status);
+                    setPage(1);
+                }}
+                currentFilter={filterStatus}
+            />
             
             <Card className="border-2 transition-all duration-200">
                 <CardHeader className="pb-4 border-b">
@@ -199,7 +244,7 @@ export default function ProjectsPage() {
                                     </SelectTrigger>
                                     <SelectContent>
                                         {uniqueCoordinators.length > 0 ? (
-                                            uniqueCoordinators.map((coord) => (
+                                            uniqueCoordinators.map((coord: string) => (
                                                 <SelectItem key={coord} value={coord}>{coord}</SelectItem>
                                             ))
                                         ) : (
@@ -238,7 +283,7 @@ export default function ProjectsPage() {
                                     </SelectTrigger>
                                     <SelectContent>
                                         {uniqueClients.length > 0 ? (
-                                            uniqueClients.map((client) => (
+                                            uniqueClients.map((client: string) => (
                                                 <SelectItem key={client} value={client}>{client}</SelectItem>
                                             ))
                                         ) : (
@@ -380,6 +425,22 @@ export default function ProjectsPage() {
                                         </button>
                                     </Badge>
                                 )}
+                                {filterStatus && (
+                                    <Badge variant="secondary" className="text-xs px-2.5 py-1 font-normal">
+                                        Status: {
+                                            filterStatus === 'in_execution' ? 'Em Execução' : 
+                                            filterStatus === 'rendering_accounts' ? 'Prestar Contas' : 
+                                            filterStatus === 'finished' ? 'Finalizados' :
+                                            filterStatus === 'all' ? 'Todos' : 'Ativos'
+                                        }
+                                        <button
+                                            onClick={() => { setFilterStatus(''); setPage(1); }}
+                                            className="ml-1.5 hover:bg-muted-foreground/20 rounded-full p-0.5 transition-colors"
+                                        >
+                                            <X className="h-3 w-3" />
+                                        </button>
+                                    </Badge>
+                                )}
                                 {showApprovedOnly && (
                                     <Badge variant="secondary" className="text-xs px-2.5 py-1 font-normal">
                                         Apenas aprovados
@@ -405,10 +466,11 @@ export default function ProjectsPage() {
                                 <TableHead className="w-[90px]">Custo</TableHead>
                                 <TableHead className="min-w-[180px]">Descrição / Cliente</TableHead>
                                 <TableHead className="w-[120px]">Período</TableHead>
+                                <TableHead className="w-[140px]">Cronograma</TableHead>
                                 <TableHead className="w-[140px]">Coordenador</TableHead>
                                 <TableHead className="text-right w-[120px]">Orçamento</TableHead>
                                 <TableHead className="text-right w-[120px]">Realizado</TableHead>
-                                <TableHead className="w-[160px]">Status</TableHead>
+                                <TableHead className="w-[160px]">Execução Financeira</TableHead>
                                 <TableHead className="w-[50px]"></TableHead>
                             </TableRow>
                         </TableHeader>
@@ -422,6 +484,7 @@ export default function ProjectsPage() {
                                             <Skeleton className="h-2.5 w-28" />
                                         </TableCell>
                                         <TableCell className="py-2"><Skeleton className="h-3 w-20" /></TableCell>
+                                        <TableCell className="py-2"><Skeleton className="h-3 w-full" /></TableCell>
                                         <TableCell className="py-2"><Skeleton className="h-3 w-28" /></TableCell>
                                         <TableCell className="text-right py-2"><Skeleton className="h-3 w-20 ml-auto" /></TableCell>
                                         <TableCell className="text-right py-2"><Skeleton className="h-3 w-20 ml-auto" /></TableCell>
@@ -451,20 +514,35 @@ export default function ProjectsPage() {
                                         <TableRow key={project.CTT_CUSTO} className="group">
                                             <TableCell className="font-semibold text-xs py-2">{project.CTT_CUSTO}</TableCell>
                                             <TableCell className="py-2">
-                                                <div className="font-medium text-xs truncate max-w-[180px]" title={project.CTT_DESC01}>
+                                                <div className="font-medium text-xs truncate max-w-[180px] flex items-center gap-1.5" title={project.CTT_DESC01}>
                                                     {project.CTT_DESC01 || 'Sem Descrição'}
+                                                    <ProjectAlerts project={project} />
                                                 </div>
                                                 {project.CTT_UNIDES && (
                                                     <div className="text-[10px] text-muted-foreground truncate max-w-[180px] mt-0.5">
                                                         {project.CTT_UNIDES}
                                                     </div>
                                                 )}
+                                                <div className="flex flex-wrap gap-1 mt-1">
+                                                  <Badge variant="outline" className="text-[9px] px-1 h-4 font-normal border-muted-foreground/30 text-muted-foreground">
+                                                    {getProjectClassification(project.CTT_CLAPRJ)}
+                                                  </Badge>
+                                                  <Badge variant="outline" className="text-[9px] px-1 h-4 font-normal border-muted-foreground/30 text-muted-foreground">
+                                                    {getServiceType(project.CTT_TPCONV)}
+                                                  </Badge>
+                                                </div>
                                             </TableCell>
                                             <TableCell className="py-2">
                                                 <div className="text-xs whitespace-nowrap">
                                                     {formatDate(project.CTT_DTINI)} <br/> 
                                                     <span className="text-muted-foreground text-[10px]">até</span> {formatDate(project.CTT_DTFIM)}
+                                                    <div className="mt-1">
+                                                        {getVigenciaBadge(project.CTT_DTINI, project.CTT_DTFIM)}
+                                                    </div>
                                                 </div>
+                                            </TableCell>
+                                            <TableCell className="py-2">
+                                                <ProjectTimeline startDate={project.CTT_DTINI} endDate={project.CTT_DTFIM} />
                                             </TableCell>
                                             <TableCell className="py-2">
                                                 <div className="text-xs font-medium truncate max-w-[140px]" title={project.CTT_NOMECO}>

@@ -31,9 +31,19 @@ export interface Project {
     CTT_COORDE?: string;
     CTT_ANALIS?: string;
     CTT_ANADES?: string;
+    CTT_CLAPRJ?: string;
+    CTT_TPCONV?: string;
     realized?: number;
     usage_percent?: number;
     initial_balance?: number;
+}
+
+export interface ProjectStats {
+    total: number;
+    in_execution: number;
+    rendering_accounts: number;
+    finished: number;
+    not_started: number;
 }
 
 export interface PaginatedResponse<T> {
@@ -42,4 +52,5 @@ export interface PaginatedResponse<T> {
     page: number;
     limit: number;
     total_pages: number;
+    stats?: ProjectStats;
 }

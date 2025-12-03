@@ -64,7 +64,7 @@ export const Sidebar = memo(function Sidebar({ isOpen = false, onClose }: Sideba
   const router = useRouter();
   const logout = useAuthStore((state) => state.logout);
   const [isHovered, setIsHovered] = useState(false);
-  const sidebarRef = useRef<HTMLAsideElement>(null);
+  const sidebarRef = useRef<HTMLElement>(null);
   
   const sidebarOpen = useMemo(() => isOpen || isHovered, [isOpen, isHovered]);
   

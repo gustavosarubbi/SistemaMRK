@@ -30,11 +30,14 @@ import {
   Building2,
   TrendingUp,
   Edit,
+  Tag,
+  Briefcase,
 } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 import { EditModal } from '@/components/validation/edit-modal';
 import { RejectModal } from '@/components/validation/reject-modal';
 import { PageHeader } from '@/components/layout/page-header';
+import { getProjectClassification, getServiceType } from '@/lib/project-mappings';
 
 export default function ProjectValidationPage() {
   const params = useParams();
@@ -271,6 +274,20 @@ export default function ProjectValidationPage() {
                 Cliente
               </div>
               <div className="font-semibold">{project.CTT_UNIDES || '-'}</div>
+            </div>
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Tag className="h-4 w-4" />
+                Classificação
+              </div>
+              <div className="font-semibold">{getProjectClassification(project.CTT_CLAPRJ)}</div>
+            </div>
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Briefcase className="h-4 w-4" />
+                Tipo Prestação
+              </div>
+              <div className="font-semibold">{getServiceType(project.CTT_TPCONV)}</div>
             </div>
             <div className="space-y-1">
               <div className="flex items-center gap-2 text-sm text-muted-foreground">

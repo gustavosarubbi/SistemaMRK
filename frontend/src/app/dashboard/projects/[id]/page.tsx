@@ -15,7 +15,7 @@ import {
     SelectTrigger, 
     SelectValue 
 } from "@/components/ui/select";
-import { ArrowLeft, Calendar, User, DollarSign, TrendingUp, Activity, Search, Filter, ArrowUpDown, ArrowUp, ArrowDown, X } from 'lucide-react';
+import { ArrowLeft, Calendar, User, DollarSign, TrendingUp, Activity, Search, Filter, ArrowUpDown, ArrowUp, ArrowDown, X, Tag, Briefcase } from 'lucide-react';
 import { ProgressBar } from '@/components/ui/progress-bar';
 import { Project } from '@/types';
 import { formatCurrency } from '@/lib/utils';
@@ -28,6 +28,7 @@ import {
     TableHeader,
     TableRow,
 } from "@/components/ui/table";
+import { getProjectClassification, getServiceType } from '@/lib/project-mappings';
 
 export default function ProjectDetailsPage() {
     const params = useParams();
@@ -299,8 +300,17 @@ export default function ProjectDetailsPage() {
                                     <div className="text-sm font-medium mt-1">{project.CTT_CLASSE === '1' ? 'Sintético' : 'Analítico'}</div>
                                 </div>
                                 <div>
-                                    <span className="text-xs text-muted-foreground font-medium uppercase">Tipo</span>
-                                    <div className="text-sm font-medium mt-1">Operacional</div> 
+                                    <span className="text-xs text-muted-foreground font-medium uppercase">Tipo Prestação</span>
+                                    <div className="text-sm font-medium mt-1">{getServiceType(project.CTT_TPCONV)}</div> 
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="border-t pt-4 mt-2">
+                            <div className="grid grid-cols-1 gap-4">
+                                <div>
+                                    <span className="text-xs text-muted-foreground font-medium uppercase">Classificação do Projeto</span>
+                                    <div className="text-sm font-medium mt-1">{getProjectClassification(project.CTT_CLAPRJ)}</div>
                                 </div>
                             </div>
                         </div>

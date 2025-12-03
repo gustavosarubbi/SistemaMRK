@@ -22,6 +22,8 @@ class CTT010(Base):
     
     CTT_BLOQ = Column(String(1))
     CTT_CLASSE = Column(String(1))
+    CTT_CLAPRJ = Column(String(10)) # Classificacao do Projeto
+    CTT_TPCONV = Column(String(10)) # Tipo de Prestacao
 
     # Metadata fields for sync - Removed as we use SYNC_CONTROL table now
     # SYNC_LAST_UPDATE = Column(String(20), nullable=True)

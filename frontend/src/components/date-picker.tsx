@@ -15,48 +15,38 @@ import {
 } from "@/components/ui/popover"
 
 interface DatePickerProps {
-  date: Date | undefined
-  setDate: (date: Date | undefined) => void
-  label?: string
+  date?: Date
+  setDate: (date?: Date) => void
+  placeholder?: string
   className?: string
 }
 
-export function DatePicker({ date, setDate, label, className }: DatePickerProps) {
-  const [open, setOpen] = React.useState(false)
-  const hasCustomWidth = className?.includes("w-");
-  
-  const handleSelect = (selectedDate: Date | undefined) => {
-    setDate(selectedDate)
-    if (selectedDate) {
-      setOpen(false)
-    }
-  }
-
+export function DatePicker({
+  date,
+  setDate,
+  placeholder = "Selecione uma data",
+  className,
+}: DatePickerProps) {
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover>
       <PopoverTrigger asChild>
         <Button
           variant={"outline"}
           className={cn(
-            "justify-start text-left font-normal text-sm",
-            !hasCustomWidth && "w-[240px]",
+            "w-[240px] justify-start text-left font-normal",
             !date && "text-muted-foreground",
             className
           )}
         >
-          <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
-          {date ? (
-            <span className="truncate">{format(date, "dd/MM/yyyy", { locale: ptBR })}</span>
-          ) : (
-            <span className="truncate">{label || "Selecione uma data"}</span>
-          )}
+          <CalendarIcon className="mr-2 h-4 w-4" />
+          {date ? format(date, "PPP", { locale: ptBR }) : <span>{placeholder}</span>}
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-auto p-0 z-[100]" align="start">
+      <PopoverContent className="w-auto p-0" align="start">
         <Calendar
           mode="single"
           selected={date}
-          onSelect={handleSelect}
+          onSelect={setDate}
           initialFocus
           locale={ptBR}
         />
@@ -64,4 +54,3 @@ export function DatePicker({ date, setDate, label, className }: DatePickerProps)
     </Popover>
   )
 }
-

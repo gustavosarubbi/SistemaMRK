@@ -1,4 +1,5 @@
 from typing import Any, List, Optional
+from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func, select
@@ -45,6 +46,7 @@ def read_projects(
     end_date: Optional[str] = None,
     coordinator: Optional[str] = None,
     client: Optional[str] = None,
+    status: Optional[str] = None,
     current_user: str = Depends(deps.get_current_user),
 ) -> Any:
     """
@@ -72,6 +74,51 @@ def read_projects(
         if client:
             query = query.filter(CTT010.CTT_UNIDES.ilike(f"%{client}%"))
         
+        if status:
+            today_dt = datetime.now()
+            today = today_dt.strftime("%Y%m%d")
+            
+            if status == 'in_execution':
+                # Vigencia: Start <= Today <= End
+                query = query.filter(CTT010.CTT_DTINI <= today, CTT010.CTT_DTFIM >= today)
+            elif status == 'rendering_accounts':
+                # Prestar Contas: End < Today <= End + 60 days
+                # Logically equivalent to: End >= Today - 60 days AND End < Today
+                sixty_days_ago = (today_dt - timedelta(days=60)).strftime("%Y%m%d")
+                query = query.filter(CTT010.CTT_DTFIM >= sixty_days_ago, CTT010.CTT_DTFIM < today)
+            elif status == 'finished':
+                # Finalizado: Today > End + 60 days
+                # Logically equivalent to: End < Today - 60 days
+                sixty_days_ago = (today_dt - timedelta(days=60)).strftime("%Y%m%d")
+                query = query.filter(CTT010.CTT_DTFIM < sixty_days_ago)
+            elif status == 'active':
+                # Active + Rendering Accounts
+                # Active means: Not Finished (> 60 days past end) AND Not Future (Started) ? 
+                # User definition: "active defined by vigencia... and rendering... finished after end+60"
+                # So Active = Everything that is NOT (Finished OR Future)? 
+                # For now, we assume "Active" means "Current work + Reporting", so we might exclude future.
+                # But typically default views show upcoming too. 
+                # Let's focus on the "Finished" complaint.
+                sixty_days_ago = (today_dt - timedelta(days=60)).strftime("%Y%m%d")
+                query = query.filter(
+                    CTT010.CTT_DTFIM >= sixty_days_ago,
+                    CTT010.CTT_DTFIM != '',
+                    CTT010.CTT_DTFIM != None
+                )
+            elif status == 'all':
+                pass # Show everything
+            
+        else:
+            # Default behavior: Show only active projects
+            # Exclude projects finished more than 60 days ago
+            today_dt = datetime.now()
+            sixty_days_ago = (today_dt - timedelta(days=60)).strftime("%Y%m%d")
+            query = query.filter(
+                CTT010.CTT_DTFIM >= sixty_days_ago,
+                CTT010.CTT_DTFIM != '',
+                CTT010.CTT_DTFIM != None
+            )
+
         if start_date:
             # Convert YYYY-MM-DD to YYYYMMDD
             d_start = start_date.replace("-", "")
@@ -82,8 +129,65 @@ def read_projects(
             # Filter by start date up to this end date, or actual end date?
             # Assuming we want projects that started before or on this date
             query = query.filter(CTT010.CTT_DTINI <= d_end)
+
+        # --- Statistics Calculation ---
+        # Calculate stats for the current filter set (ignoring the status filter itself to show distribution)
+        # Note: We create a separate query object for stats to avoid affecting the main pagination query
+        
+        stats_query = db.query(CTT010)
+        
+        # Re-apply all filters EXCEPT status to the stats query
+        if search:
+            stats_query = stats_query.filter(
+                (CTT010.CTT_DESC01.ilike(search_filter)) | 
+                (CTT010.CTT_CUSTO.ilike(search_filter)) |
+                (CTT010.CTT_NOMECO.ilike(search_filter))
+            )
+        if coordinator:
+            stats_query = stats_query.filter(CTT010.CTT_NOMECO.ilike(f"%{coordinator}%"))
+        if client:
+            stats_query = stats_query.filter(CTT010.CTT_UNIDES.ilike(f"%{client}%"))
+        if start_date:
+            d_start_stats = start_date.replace("-", "")
+            stats_query = stats_query.filter(CTT010.CTT_DTINI >= d_start_stats)
+        if end_date:
+            d_end_stats = end_date.replace("-", "")
+            stats_query = stats_query.filter(CTT010.CTT_DTINI <= d_end_stats)
             
-        # Get total count for pagination
+        # Get all relevant dates for classification
+        # We fetch only necessary columns to minimize load
+        all_projects_dates = stats_query.with_entities(CTT010.CTT_DTINI, CTT010.CTT_DTFIM).all()
+        
+        today_dt = datetime.now()
+        today_str = today_dt.strftime("%Y%m%d")
+        sixty_days_ago_str = (today_dt - timedelta(days=60)).strftime("%Y%m%d")
+        
+        stats = {
+            "total": len(all_projects_dates),
+            "in_execution": 0,
+            "rendering_accounts": 0,
+            "finished": 0,
+            "not_started": 0
+        }
+        
+        for p in all_projects_dates:
+            dt_ini = p.CTT_DTINI or ""
+            dt_fim = p.CTT_DTFIM or ""
+            
+            # Skip invalid dates
+            if len(dt_ini) != 8 or len(dt_fim) != 8:
+                continue
+                
+            if dt_ini <= today_str and dt_fim >= today_str:
+                stats["in_execution"] += 1
+            elif dt_fim >= sixty_days_ago_str and dt_fim < today_str:
+                stats["rendering_accounts"] += 1
+            elif dt_fim < sixty_days_ago_str:
+                stats["finished"] += 1
+            elif dt_ini > today_str:
+                stats["not_started"] += 1
+            
+        # Get total count for pagination (for the main query)
         total = query.count()
         
         # Get paginated items
@@ -94,42 +198,32 @@ def read_projects(
         custos_list = [str(p.CTT_CUSTO).strip() if p.CTT_CUSTO else None for p in projects]
         custos_list = [c for c in custos_list if c]  # Remove None values
         
+        # Get all budget amounts in one query
+        # Optimize: Budget is just CTT_SALINI from CTT010, no need to query PAD010
+        # This will be handled in the loop below
+        
         # Get all realized amounts in one query
         realized_dict = {}
         if custos_list:
+            # Realized = PAD_APAGAR + PAD_REALIZ
             realized_results = db.query(
-                PAC010.PAC_CUSTO,
-                func.sum(PAC010.PAC_VALOR).label('realized')
-            ).filter(PAC010.PAC_CUSTO.in_(custos_list))\
-             .group_by(PAC010.PAC_CUSTO).all()
+                PAD010.PAD_CUSTO,
+                func.sum(func.coalesce(PAD010.PAD_APAGAR, 0) + func.coalesce(PAD010.PAD_REALIZ, 0)).label('realized')
+            ).filter(
+                PAD010.PAD_CUSTO.in_(custos_list),
+                func.length(PAD010.PAD_NATURE) <= 4,
+                PAD010.PAD_NATURE != '0001'
+            ).group_by(PAD010.PAD_CUSTO).all()
+            
             # Handle both Row objects and tuples
             realized_dict = {}
             for row in realized_results:
                 try:
-                    custo = row.PAC_CUSTO.strip() if hasattr(row, 'PAC_CUSTO') else str(row[0]).strip()
+                    custo = row.PAD_CUSTO.strip() if hasattr(row, 'PAD_CUSTO') else str(row[0]).strip()
                     realized = float(row.realized or 0.0) if hasattr(row, 'realized') else float(row[1] or 0.0)
                     realized_dict[custo] = realized
                 except Exception as e:
                     print(f"Error processing realized row: {e}, row type: {type(row)}")
-                    continue
-        
-        # Get all budget amounts in one query
-        budget_dict = {}
-        if custos_list:
-            budget_results = db.query(
-                PAD010.PAD_CUSTO,
-                func.sum(PAD010.PAD_ORCADO).label('budget')
-            ).filter(PAD010.PAD_CUSTO.in_(custos_list))\
-             .group_by(PAD010.PAD_CUSTO).all()
-            # Handle both Row objects and tuples
-            budget_dict = {}
-            for row in budget_results:
-                try:
-                    custo = row.PAD_CUSTO.strip() if hasattr(row, 'PAD_CUSTO') else str(row[0]).strip()
-                    budget = float(row.budget or 0.0) if hasattr(row, 'budget') else float(row[1] or 0.0)
-                    budget_dict[custo] = budget
-                except Exception as e:
-                    print(f"Error processing budget row: {e}, row type: {type(row)}")
                     continue
         
         # Build response data using pre-fetched values
@@ -140,11 +234,13 @@ def read_projects(
             # Get pre-calculated values (use stripped custo for lookup)
             custo_stripped = str(p.CTT_CUSTO).strip() if p.CTT_CUSTO else ""
             realized = realized_dict.get(custo_stripped, 0.0)
-            budget = budget_dict.get(custo_stripped, 0.0)
+            
+            # Budget is now CTT_SALINI
+            budget = float(p.CTT_SALINI or 0.0)
             
             p_dict['realized'] = realized
             p_dict['budget'] = budget
-            p_dict['initial_balance'] = p.CTT_SALINI or 0.0
+            p_dict['initial_balance'] = budget # Keeping initial_balance as alias for budget/CTT_SALINI for now
             
             # Calculate percentage
             if budget > 0:
@@ -159,7 +255,8 @@ def read_projects(
             "total": total,
             "page": page,
             "limit": limit,
-            "total_pages": (total + limit - 1) // limit
+            "total_pages": (total + limit - 1) // limit,
+            "stats": stats
         }
     except Exception as e:
         import traceback
@@ -171,7 +268,8 @@ def read_projects(
             "total": 0,
             "page": page,
             "limit": limit,
-            "total_pages": 0
+            "total_pages": 0,
+            "stats": {"total": 0, "in_execution": 0, "rendering_accounts": 0, "finished": 0, "not_started": 0}
         }
 
 @router.post("/", response_model=dict)
@@ -266,17 +364,20 @@ def read_project(
     p_dict = object_as_dict(project)
     
     # Add realized amount
-    realized = db.query(func.sum(PAC010.PAC_VALOR))\
-        .filter(PAC010.PAC_CUSTO == custo)\
+    # Realized = Sum(PAD_APAGAR + PAD_REALIZ) where length(PAD_NATURE) <= 4 AND PAD_NATURE != '0001'
+    realized = db.query(func.sum(func.coalesce(PAD010.PAD_APAGAR, 0) + func.coalesce(PAD010.PAD_REALIZ, 0)))\
+        .filter(
+            PAD010.PAD_CUSTO == custo,
+            func.length(PAD010.PAD_NATURE) <= 4,
+            PAD010.PAD_NATURE != '0001'
+        )\
         .scalar() or 0.0
     
-    # Add Budget from PAD010
-    budget = db.query(func.sum(PAD010.PAD_ORCADO))\
-        .filter(PAD010.PAD_CUSTO == custo)\
-        .scalar() or 0.0
+    # Add Budget from CTT010.CTT_SALINI
+    budget = float(project.CTT_SALINI or 0.0)
     
     p_dict['realized'] = float(realized)
-    p_dict['budget'] = float(budget)
-    p_dict['initial_balance'] = project.CTT_SALINI or 0.0
+    p_dict['budget'] = budget
+    p_dict['initial_balance'] = budget
     
     return p_dict

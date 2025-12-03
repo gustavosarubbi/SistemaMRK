@@ -41,3 +41,5 @@ if __name__ == "__main__":
     # Como não sabemos, vamos focar nas padrões.
 
 
+
+

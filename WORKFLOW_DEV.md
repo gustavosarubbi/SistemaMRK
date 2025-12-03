@@ -165,3 +165,5 @@ Se a sincronização falhar por falta de espaço no banco:
 - Verifique o console do navegador (F12) para erros de rede.
 
 
+
+

@@ -86,3 +86,5 @@ Quando fizer uma requisição do frontend, verifique os logs do backend para err
 3. **Verifique o console do navegador** para erros
 4. **Veja os logs do backend** quando fizer requisições do frontend
 
+
+
