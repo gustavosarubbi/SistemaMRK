@@ -33,3 +33,4 @@ def inspect_columns(table_name):
 if __name__ == "__main__":
     inspect_columns("PAD010")
 
+

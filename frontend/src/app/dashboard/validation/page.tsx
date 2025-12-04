@@ -35,6 +35,7 @@ import {
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { formatCurrency } from '@/lib/utils';
+import { getProjectClassification, getServiceType } from '@/lib/project-mappings';
 
 const TABLES = [
   { value: 'CTT010', label: 'Projetos (CTT010)' },
@@ -296,6 +297,8 @@ export default function ValidationPage() {
                         <>
                           <TableHead>Descrição</TableHead>
                           <TableHead>Cliente</TableHead>
+                          <TableHead>Classificação</TableHead>
+                          <TableHead>Tipo</TableHead>
                           <TableHead>Coordenador</TableHead>
                         </>
                       )}
@@ -363,6 +366,12 @@ export default function ValidationPage() {
                                 </TableCell>
                                 <TableCell className="text-xs">
                                   {record.CTT_UNIDES || '-'}
+                                </TableCell>
+                                <TableCell className="text-xs">
+                                  {getProjectClassification(record.CTT_CLAPRJ)}
+                                </TableCell>
+                                <TableCell className="text-xs">
+                                  {getServiceType(record.CTT_TPCONV)}
                                 </TableCell>
                                 <TableCell className="text-xs">
                                   {record.CTT_NOMECO || '-'}

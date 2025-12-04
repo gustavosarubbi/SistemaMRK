@@ -1,5 +1,6 @@
 import {
-  LineChart,
+  AreaChart,
+  Area,
   Line,
   XAxis,
   YAxis,
@@ -16,18 +17,13 @@ import {
   CardDescription,
 } from "@/components/ui/card";
 import { formatCurrency } from "@/lib/utils";
+import { TrendData } from "@/types";
 
-// Mock data since the current API response doesn't strictly provide time-series
-const mockTrendData = [
-  { month: "Jan", budget: 4000000, realized: 2400000 },
-  { month: "Fev", budget: 3000000, realized: 1398000 },
-  { month: "Mar", budget: 2000000, realized: 9800000 },
-  { month: "Abr", budget: 2780000, realized: 3908000 },
-  { month: "Mai", budget: 1890000, realized: 4800000 },
-  { month: "Jun", budget: 2390000, realized: 3800000 },
-];
+interface BudgetTrendLineChartProps {
+  data?: TrendData[];
+}
 
-export function BudgetTrendLineChart() {
+export function BudgetTrendLineChart({ data = [] }: BudgetTrendLineChartProps) {
   return (
     <Card className="shadow-sm border-border/50">
       <CardHeader>
@@ -35,70 +31,91 @@ export function BudgetTrendLineChart() {
           Tendência de Execução
         </CardTitle>
         <CardDescription className="text-xs">
-          Comparativo Orçado vs. Realizado (Simulado)
+          Comparativo Orçado vs. Realizado (últimos 6 meses)
         </CardDescription>
       </CardHeader>
       <CardContent>
         <div className="h-[300px] w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart
-              data={mockTrendData}
-              margin={{
-                top: 5,
-                right: 30,
-                left: 20,
-                bottom: 5,
-              }}
-            >
-              <CartesianGrid strokeDasharray="3 3" opacity={0.2} vertical={false} />
-              <XAxis 
-                dataKey="month" 
-                tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} 
-                tickLine={false}
-                axisLine={false}
-              />
-              <YAxis 
-                tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
-                tickFormatter={(value) => `R$ ${(value / 1000000).toFixed(0)}M`}
-                tickLine={false}
-                axisLine={false}
-              />
-              <Tooltip
-                contentStyle={{ 
-                    backgroundColor: "hsl(var(--popover))",
-                    border: "1px solid hsl(var(--border))",
-                    borderRadius: "var(--radius)",
-                    fontSize: "12px"
+          {data.length === 0 ? (
+            <div className="flex items-center justify-center h-full text-muted-foreground">
+              Nenhum dado disponível
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart
+                data={data}
+                margin={{
+                  top: 5,
+                  right: 30,
+                  left: 20,
+                  bottom: 5,
                 }}
-                formatter={(value: number) => [formatCurrency(value), ""]}
-                labelStyle={{ color: "hsl(var(--muted-foreground))", marginBottom: "0.25rem" }}
-              />
-              <Legend wrapperStyle={{ fontSize: "12px", paddingTop: "10px" }} />
-              <Line
-                type="monotone"
-                dataKey="budget"
-                name="Orçamento"
-                stroke="hsl(var(--primary))"
-                strokeWidth={2}
-                dot={{ r: 3 }}
-                activeDot={{ r: 5 }}
-              />
-              <Line
-                type="monotone"
-                dataKey="realized"
-                name="Realizado"
-                stroke="hsl(217, 91%, 60%)" // blue-600
-                strokeWidth={2}
-                dot={{ r: 3 }}
-                activeDot={{ r: 5 }}
-              />
-            </LineChart>
-          </ResponsiveContainer>
+              >
+                <defs>
+                  <linearGradient id="colorBudget" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3}/>
+                    <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0}/>
+                  </linearGradient>
+                  <linearGradient id="colorRealized" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="hsl(217, 91%, 60%)" stopOpacity={0.3}/>
+                    <stop offset="95%" stopColor="hsl(217, 91%, 60%)" stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" opacity={0.2} vertical={false} />
+                <XAxis 
+                  dataKey="month" 
+                  tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} 
+                  tickLine={false}
+                  axisLine={false}
+                />
+                <YAxis 
+                  tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                  tickFormatter={(value) => `R$ ${(value / 1000000).toFixed(0)}M`}
+                  tickLine={false}
+                  axisLine={false}
+                />
+                <Tooltip
+                  contentStyle={{ 
+                      backgroundColor: "hsl(var(--popover))",
+                      border: "1px solid hsl(var(--border))",
+                      borderRadius: "var(--radius)",
+                      fontSize: "12px"
+                  }}
+                  formatter={(value: number, name: string) => [
+                    formatCurrency(value),
+                    name === "budget" ? "Orçamento" : "Realizado"
+                  ]}
+                  labelStyle={{ color: "hsl(var(--muted-foreground))", marginBottom: "0.25rem" }}
+                />
+                <Legend 
+                  wrapperStyle={{ fontSize: "12px", paddingTop: "10px" }}
+                  formatter={(value) => value === "budget" ? "Orçamento" : "Realizado"}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="budget"
+                  name="budget"
+                  stroke="hsl(var(--primary))"
+                  strokeWidth={2}
+                  fill="url(#colorBudget)"
+                />
+                <Area
+                  type="monotone"
+                  dataKey="realized"
+                  name="realized"
+                  stroke="hsl(217, 91%, 60%)"
+                  strokeWidth={2}
+                  fill="url(#colorRealized)"
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          )}
         </div>
       </CardContent>
     </Card>
   );
 }
+
 
 
 

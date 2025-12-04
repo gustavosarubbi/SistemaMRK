@@ -1,16 +1,10 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCurrency } from "@/lib/utils";
-import { Briefcase, DollarSign, TrendingUp, Wallet } from "lucide-react";
-
-interface KPIData {
-  total_projects: number;
-  total_budget: number;
-  total_realized: number;
-  balance: number;
-}
+import { Briefcase, DollarSign, TrendingUp, Wallet, PlayCircle, AlertTriangle, AlertCircle } from "lucide-react";
+import { KPI } from "@/types";
 
 interface KPICardsProps {
-  kpis: KPIData;
+  kpis: KPI;
 }
 
 export function KPICards({ kpis }: KPICardsProps) {
@@ -102,9 +96,49 @@ export function KPICards({ kpis }: KPICardsProps) {
           </p>
         </CardContent>
       </Card>
+
+      {/* New KPIs - Only show if they exist */}
+      {kpis.in_execution !== undefined && (
+        <Card className="hover:shadow-md transition-shadow">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Em Execução
+            </CardTitle>
+            <div className="p-1.5 bg-green-500/10 rounded-full">
+              <PlayCircle className="h-3.5 w-3.5 text-green-600" />
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-green-600">{kpis.in_execution}</div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Projetos ativos
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {kpis.ending_soon !== undefined && (
+        <Card className="hover:shadow-md transition-shadow">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Finalizando
+            </CardTitle>
+            <div className="p-1.5 bg-amber-500/10 rounded-full">
+              <AlertTriangle className="h-3.5 w-3.5 text-amber-600" />
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-amber-600">{kpis.ending_soon}</div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Próximos 30 dias
+            </p>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
+
 
 
 

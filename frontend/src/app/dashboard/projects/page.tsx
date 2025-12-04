@@ -1,46 +1,124 @@
 'use client';
-import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import api from '@/lib/api';
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { PageHeader } from '@/components/layout/page-header';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Pagination } from '@/components/ui/pagination';
-import { ProgressBar } from '@/components/ui/progress-bar';
-import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Project, PaginatedResponse } from '@/types';
-import { Search, X, ArrowRight, AlertCircle, FileText, Filter, Calendar, User, Building2, RotateCcw, CheckCircle2, Clock } from 'lucide-react';
-import Link from 'next/link';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { formatCurrency } from '@/lib/utils';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Switch } from '@/components/ui/switch';
-import { Label } from '@/components/ui/label';
 
+import * as React from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { useSearchParams } from 'next/navigation';
+import api from '@/lib/api';
+import { PageHeader } from '@/components/layout/page-header';
+import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { DataTable } from '@/components/ui/data-table';
+import { Pagination } from '@/components/ui/pagination';
+import { Project, PaginatedResponse, AdvancedProjectFilters, SavedFilter, ViewMode, FilterPreset } from '@/types';
+import { AlertCircle, FileText, Filter, PanelLeftClose, PanelLeft } from 'lucide-react';
+
+// Project components
 import { ProjectStatsCards } from '@/components/dashboard/project-stats-cards';
-import { ProjectTimeline } from '@/components/dashboard/project-timeline';
-import { ProjectAlerts } from '@/components/dashboard/project-alerts';
+import { FiltersSidebar } from '@/components/projects/filters-sidebar';
+import { TableToolbar } from '@/components/projects/table-toolbar';
+import { projectColumns, compactColumns, getRowUrgencyClass } from '@/components/projects/columns';
+import { ProjectsGrid } from '@/components/projects/projects-grid';
+import { BulkActionsBar } from '@/components/projects/bulk-actions-bar';
+import { ComparisonModal } from '@/components/projects/comparison-modal';
+import { SaveFilterModal } from '@/components/projects/save-filter-modal';
+import { UrgencyCards } from '@/components/projects/urgency-cards';
+import { QuickFilterChips } from '@/components/projects/quick-filter-chips';
+
+// Store and utilities
+import { useProjectPreferencesStore } from '@/store/projectPreferencesStore';
+import { exportProjects, ExportFormat } from '@/lib/export-utils';
+import { useDebouncedCallback } from 'use-debounce';
+import { useFilterCounts, useUrgencyCounts } from '@/hooks/useFilterCounts';
+import { 
+    filterByVigenciaDaysRange,
+    filterByRenderingDaysRange,
+    filterByExecutionRange,
+    isProjectCritical,
+    needsUrgentAttention,
+    getDaysRemaining,
+    getDaysSinceEnd,
+    isRenderingAccountsUrgent,
+} from '@/lib/date-utils';
 import { getProjectClassification, getServiceType } from '@/lib/project-mappings';
+import { cn } from '@/lib/utils';
 
 export default function ProjectsPage() {
-    const [search, setSearch] = useState('');
+    const searchParams = useSearchParams();
+    
+    // Preferences from store
+    const {
+        visibleColumns,
+        viewMode,
+        itemsPerPage,
+        savedFilters,
+        setVisibleColumns,
+        setViewMode,
+        setItemsPerPage,
+        addSavedFilter,
+        removeSavedFilter,
+        toggleColumn,
+    } = useProjectPreferencesStore();
+
+    // Initialize filters from URL params
+    const getInitialFilters = useCallback((): AdvancedProjectFilters => {
+        const status = searchParams.get('status') || '';
+        const sort = searchParams.get('sort') || '';
+        const filter = searchParams.get('filter') || '';
+        
+        return {
+            search: '',
+            startDate: '2023-01-01',
+            endDate: '',
+            coordinator: '',
+            client: '',
+            status: status || '',
+            showApprovedOnly: false,
+            vigenciaDaysRange: 'all',
+            renderingDaysRange: 'all',
+            executionRange: 'all',
+            classification: '',
+            serviceType: '',
+        };
+    }, [searchParams]);
+
+    // Local state for filters
+    const [filters, setFilters] = useState<AdvancedProjectFilters>(getInitialFilters());
+    
+    // Apply URL params on mount
+    useEffect(() => {
+        const status = searchParams.get('status');
+        const sort = searchParams.get('sort');
+        const filter = searchParams.get('filter');
+        
+        if (status) {
+            setFilters(prev => ({ ...prev, status }));
+        }
+        
+        // Handle ending_soon filter
+        if (filter === 'ending_soon' && status === 'in_execution') {
+            setFilters(prev => ({ 
+                ...prev, 
+                status: 'in_execution',
+                vigenciaDaysRange: '30days'
+            }));
+        }
+    }, [searchParams]);
+    
     const [page, setPage] = useState(1);
-    const [startDate, setStartDate] = useState('2023-01-01');
-    const [endDate, setEndDate] = useState('');
-    const [filterCoordinator, setFilterCoordinator] = useState('');
-    const [filterClient, setFilterClient] = useState('');
-    const [filterStatus, setFilterStatus] = useState('');
-    const [showApprovedOnly, setShowApprovedOnly] = useState(false);
-    const limit = 10; // Items per page
+    const [selectedRows, setSelectedRows] = useState<Project[]>([]);
+    const [isCompareOpen, setIsCompareOpen] = useState(false);
+    const [isSaveFilterOpen, setIsSaveFilterOpen] = useState(false);
+    const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+    const [activeUrgencyFilter, setActiveUrgencyFilter] = useState<string | undefined>();
+    const [activePreset, setActivePreset] = useState<FilterPreset | undefined>();
+    
+    // Debounced search for API calls
+    const [debouncedSearch, setDebouncedSearch] = useState('');
+    const debouncedSetSearch = useDebouncedCallback((value: string) => {
+        setDebouncedSearch(value);
+        setPage(1);
+    }, 300);
     
     // Fetch filter options (Coordinators and Clients)
     const { data: filterOptions } = useQuery({
@@ -52,110 +130,308 @@ export default function ProjectsPage() {
         refetchOnWindowFocus: false,
     });
 
-    const uniqueCoordinators = filterOptions?.coordinators || [];
-    const uniqueClients = filterOptions?.units || [];
+    const coordinators = filterOptions?.coordinators || [];
+    const clients = filterOptions?.units || [];
 
+    // Fetch projects
     const { data, isLoading, error, refetch } = useQuery<PaginatedResponse<Project>>({
-        queryKey: ['projects', search, page, startDate, endDate, filterCoordinator, filterClient, filterStatus],
+        queryKey: ['projects', debouncedSearch, page, filters.startDate, filters.endDate, filters.coordinator, filters.client, filters.status, itemsPerPage],
         queryFn: async () => {
             const params = new URLSearchParams();
-            if (search) params.append('search', search);
-            if (startDate) params.append('start_date', startDate);
-            if (endDate) params.append('end_date', endDate);
-            if (filterCoordinator) params.append('coordinator', filterCoordinator);
-            if (filterClient) params.append('client', filterClient);
-            if (filterStatus) params.append('status', filterStatus);
+            if (debouncedSearch) params.append('search', debouncedSearch);
+            if (filters.startDate) params.append('start_date', filters.startDate);
+            if (filters.endDate) params.append('end_date', filters.endDate);
+            if (filters.coordinator) params.append('coordinator', filters.coordinator);
+            if (filters.client) params.append('client', filters.client);
+            if (filters.status && filters.status !== 'not_started') params.append('status', filters.status);
             
             params.append('page', page.toString());
-            params.append('limit', limit.toString());
+            params.append('limit', itemsPerPage.toString());
             
             const res = await api.get(`/projects?${params.toString()}`);
             return res.data;
         },
-        // Keep previous data while fetching new page for better UX
         placeholderData: (previousData) => previousData,
-        retry: 1, // Limita retries para evitar loops infinitos
-        refetchOnWindowFocus: false, // Evita refetch automático ao focar na janela
+        retry: 1,
+        refetchOnWindowFocus: false,
     });
 
     const allProjects = data?.data || [];
     
-    // Filtrar projetos aprovados/não aprovados
-    // Um projeto é considerado aprovado se tem budget > 0 e não está bloqueado
-    const projects = showApprovedOnly 
-        ? allProjects.filter(p => {
-            const hasBudget = (p.budget || 0) > 0;
-            const isNotBlocked = p.CTT_BLOQ !== 'S' && p.CTT_BLOQ !== '1';
-            return hasBudget && isNotBlocked;
-        })
-        : allProjects;
+    // Query separada para obter TODOS os projetos (sem paginação) para contadores de urgência
+    // Usa status=all para pegar TODOS os projetos, não apenas os ativos
+    const { data: allProjectsForCounts } = useQuery<PaginatedResponse<Project>>({
+        queryKey: ['projects-counts', debouncedSearch, filters.startDate, filters.endDate, filters.coordinator, filters.client],
+        queryFn: async () => {
+            const params = new URLSearchParams();
+            if (debouncedSearch) params.append('search', debouncedSearch);
+            if (filters.startDate) params.append('start_date', filters.startDate);
+            if (filters.endDate) params.append('end_date', filters.endDate);
+            if (filters.coordinator) params.append('coordinator', filters.coordinator);
+            if (filters.client) params.append('client', filters.client);
+            // Usar status=all para pegar TODOS os projetos (incluindo finalizados) para contadores
+            params.append('status', 'all');
+            // Não aplicar paginação - pegar todos
+            params.append('page', '1');
+            params.append('limit', '10000'); // Limite alto para pegar todos
+            
+            const res = await api.get(`/projects?${params.toString()}`);
+            return res.data;
+        },
+        placeholderData: (previousData) => previousData,
+        retry: 1,
+        refetchOnWindowFocus: false,
+    });
+    
+    // Projetos para contadores (todos, sem paginação, incluindo finalizados)
+    const projectsForCounts = allProjectsForCounts?.data || [];
+    
+    // Apply client-side filters
+    const filteredProjects = useMemo(() => {
+        let result = allProjects;
+        
+        // Filter by approved only
+        if (filters.showApprovedOnly) {
+            result = result.filter(p => {
+                const hasBudget = (p.budget || 0) > 0;
+                const isNotBlocked = p.CTT_BLOQ !== 'S' && p.CTT_BLOQ !== '1';
+                return hasBudget && isNotBlocked;
+            });
+        }
+        
+        // Filter by classification
+        if (filters.classification) {
+            result = result.filter(p => {
+                const classification = getProjectClassification(p.CTT_CLAPRJ);
+                return classification === filters.classification;
+            });
+        }
+        
+        // Filter by service type
+        if (filters.serviceType) {
+            result = result.filter(p => {
+                const serviceType = getServiceType(p.CTT_TPCONV);
+                return serviceType === filters.serviceType;
+            });
+        }
+        
+        // Filter by vigência days remaining
+        if (filters.vigenciaDaysRange && filters.vigenciaDaysRange !== 'all') {
+            result = filterByVigenciaDaysRange(
+                result, 
+                filters.vigenciaDaysRange,
+                filters.vigenciaDaysMin,
+                filters.vigenciaDaysMax
+            );
+        }
+        
+        // Filter by rendering days remaining
+        if (filters.renderingDaysRange && filters.renderingDaysRange !== 'all') {
+            result = filterByRenderingDaysRange(
+                result,
+                filters.renderingDaysRange,
+                filters.renderingDaysMin,
+                filters.renderingDaysMax
+            );
+        }
+        
+        // Filter by execution range
+        if (filters.executionRange && filters.executionRange !== 'all') {
+            result = filterByExecutionRange(
+                result,
+                filters.executionRange,
+                filters.executionMin,
+                filters.executionMax
+            );
+        }
+        
+        // Filter by urgency card
+        if (activeUrgencyFilter) {
+            result = result.filter(project => {
+                const days = getDaysRemaining(project.CTT_DTFIM);
+                const daysSinceEnd = getDaysSinceEnd(project.CTT_DTFIM);
+                switch (activeUrgencyFilter) {
+                    case 'today':
+                        return days === 0;
+                    case 'week':
+                        return days !== null && days > 0 && days <= 7;
+                    case 'critical':
+                        return isProjectCritical(project);
+                    case 'rendering_urgent':
+                        // Prestação de contas urgente (≤15 dias restantes)
+                        return isRenderingAccountsUrgent(project.CTT_DTFIM);
+                    case 'rendering':
+                        return filters.status === 'rendering_accounts';
+                    default:
+                        return true;
+                }
+            });
+        }
+        
+        // Filter by preset
+        if (activePreset && activePreset !== 'all') {
+            result = result.filter(project => {
+                const days = getDaysRemaining(project.CTT_DTFIM);
+                const daysSinceEnd = getDaysSinceEnd(project.CTT_DTFIM);
+                const usage = project.usage_percent || 0;
+                
+                switch (activePreset) {
+                    case 'critical':
+                        return isProjectCritical(project);
+                    case 'urgent_attention':
+                        return needsUrgentAttention(project);
+                    case 'ending_soon':
+                        return days !== null && days >= 0 && days <= 30;
+                    case 'render_accounts':
+                        return filters.status === 'rendering_accounts';
+                    case 'rendering_urgent':
+                        return isRenderingAccountsUrgent(project.CTT_DTFIM);
+                    default:
+                        return true;
+                }
+            });
+        }
+        
+        return result;
+    }, [allProjects, filters, activeUrgencyFilter, activePreset]);
     
     const totalPages = data?.total_pages || 1;
+    const totalItems = data?.total || 0;
 
-    const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
-        setSearch(e.target.value);
-        setPage(1); 
+    // Calculate counts usando TODOS os projetos (sem paginação)
+    const filterCounts = useFilterCounts(projectsForCounts);
+    const urgencyCountsRaw = useUrgencyCounts(projectsForCounts);
+    
+    // Usar stats do backend para garantir consistência com os cards de baixo
+    // Mas manter os contadores de urgência específicos do frontend
+    const urgencyCounts = {
+        ...urgencyCountsRaw,
+        // Usar stats do backend para renderingAccounts para garantir consistência
+        renderingAccounts: data?.stats?.rendering_accounts || urgencyCountsRaw.renderingAccounts,
     };
 
-    const clearFilters = () => {
-        setSearch('');
-        setStartDate('2023-01-01');
-        setEndDate('');
-        setFilterCoordinator('');
-        setFilterClient('');
-        setFilterStatus('');
-        setShowApprovedOnly(false);
+    // Memoized columns based on view mode
+    const columns = useMemo(() => {
+        return viewMode === 'compact' ? compactColumns : projectColumns;
+    }, [viewMode]);
+
+    // Column visibility state for DataTable
+    const columnVisibility = useMemo(() => {
+        const visibility: Record<string, boolean> = {};
+        columns.forEach(col => {
+            const id = (col as { accessorKey?: string; id?: string }).accessorKey || (col as { id?: string }).id;
+            if (id) {
+                visibility[id] = visibleColumns.includes(id);
+            }
+        });
+        return visibility;
+    }, [columns, visibleColumns]);
+
+    // Handlers
+    const handleFiltersChange = useCallback((newFilters: Partial<AdvancedProjectFilters>) => {
+        setFilters(prev => ({ ...prev, ...newFilters }));
+        if ('search' in newFilters) {
+            debouncedSetSearch(newFilters.search || '');
+        }
         setPage(1);
-    };
-    
-    const formatDate = (dateStr: string) => {
-        if (!dateStr || dateStr.length !== 8) return '-';
-        // YYYYMMDD -> DD/MM/YYYY
-        return `${dateStr.substring(6, 8)}/${dateStr.substring(4, 6)}/${dateStr.substring(0, 4)}`;
-    };
-
-    const getVigenciaBadge = (dtIni: string, dtFim: string) => {
-        if (!dtIni || !dtFim || dtIni.length !== 8 || dtFim.length !== 8) return null;
-        
-        // Convert dates from YYYYMMDD
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        
-        const start = new Date(Number(dtIni.substring(0, 4)), Number(dtIni.substring(4, 6)) - 1, Number(dtIni.substring(6, 8)));
-        const end = new Date(Number(dtFim.substring(0, 4)), Number(dtFim.substring(4, 6)) - 1, Number(dtFim.substring(6, 8)));
-        
-        const endPlus60 = new Date(end);
-        endPlus60.setDate(endPlus60.getDate() + 60);
-        
-        if (today >= start && today <= end) {
-            return <Badge variant="success" className="text-[10px] h-5 px-1.5 whitespace-nowrap">Em Execução</Badge>;
-        } else if (today > end && today <= endPlus60) {
-            return <Badge variant="warning" className="text-[10px] h-5 px-1.5 whitespace-nowrap">Prestar Contas</Badge>;
-        } else if (today > endPlus60) {
-            return <Badge variant="secondary" className="text-[10px] h-5 px-1.5 whitespace-nowrap">Finalizado</Badge>;
-        } else {
-             return <Badge variant="outline" className="text-[10px] h-5 px-1.5 whitespace-nowrap">Não Iniciado</Badge>;
+        // Clear urgency filter when changing other filters
+        if (!('status' in newFilters)) {
+            setActiveUrgencyFilter(undefined);
         }
-    };
+    }, [debouncedSetSearch]);
 
-    const getStatusBadge = (usagePercent: number) => {
-        if (usagePercent > 100) {
-            return <Badge variant="critical">Excedido</Badge>;
-        } else if (usagePercent > 85) {
-            return <Badge variant="danger">Crítico</Badge>;
-        } else if (usagePercent > 70) {
-            return <Badge variant="warning">Atenção</Badge>;
-        } else {
-            return <Badge variant="success">Em dia</Badge>;
+    const handleClearFilters = useCallback(() => {
+        setFilters({
+            search: '',
+            startDate: '2023-01-01',
+            endDate: '',
+            coordinator: '',
+            client: '',
+            status: '',
+            showApprovedOnly: false,
+            vigenciaDaysRange: 'all',
+            renderingDaysRange: 'all',
+            executionRange: 'all',
+            classification: '',
+            serviceType: '',
+        });
+        setDebouncedSearch('');
+        setActiveUrgencyFilter(undefined);
+        setActivePreset(undefined);
+        setPage(1);
+    }, []);
+
+    const handleColumnVisibilityChange = useCallback((columnId: string, visible: boolean) => {
+        toggleColumn(columnId);
+    }, [toggleColumn]);
+
+    const handleExport = useCallback((format: ExportFormat, selectedOnly: boolean) => {
+        const dataToExport = selectedOnly ? selectedRows : filteredProjects;
+        const filename = `projetos-${new Date().toISOString().split('T')[0]}`;
+        exportProjects(dataToExport, format, filename);
+    }, [selectedRows, filteredProjects]);
+
+    const handleSaveFilter = useCallback((name: string) => {
+        const newFilter: SavedFilter = {
+            id: `filter-${Date.now()}`,
+            name,
+            createdAt: new Date().toISOString(),
+            filters: { ...filters, search: debouncedSearch },
+        };
+        addSavedFilter(newFilter);
+    }, [filters, debouncedSearch, addSavedFilter]);
+
+    const handleApplyFilter = useCallback((filter: SavedFilter) => {
+        setFilters(filter.filters as AdvancedProjectFilters);
+        if (filter.filters.search) {
+            setDebouncedSearch(filter.filters.search);
         }
-    };
+        setPage(1);
+    }, []);
 
-    const activeFiltersCount = [search, endDate, filterCoordinator, filterClient, filterStatus, showApprovedOnly].filter(Boolean).length + (startDate !== '2023-01-01' ? 1 : 0);
-    
-    const hasActiveFilters = activeFiltersCount > 0;
+    const handleRowSelection = useCallback((rows: Project[]) => {
+        setSelectedRows(rows);
+    }, []);
+
+    const handleGridSelect = useCallback((project: Project, selected: boolean) => {
+        setSelectedRows(prev => {
+            if (selected) {
+                return [...prev, project];
+            }
+            return prev.filter(p => p.CTT_CUSTO !== project.CTT_CUSTO);
+        });
+    }, []);
+
+    const handleStatusFilterClick = useCallback((status: string) => {
+        setFilters(prev => ({ ...prev, status }));
+        setPage(1);
+    }, []);
+
+    const handleUrgencyCardClick = useCallback((filter: string) => {
+        if (activeUrgencyFilter === filter) {
+            setActiveUrgencyFilter(undefined);
+        } else {
+            setActiveUrgencyFilter(filter);
+            // Set status filter for rendering accounts
+            if (filter === 'rendering') {
+                setFilters(prev => ({ ...prev, status: 'rendering_accounts' }));
+            }
+        }
+        setPage(1);
+    }, [activeUrgencyFilter]);
+
+    const handlePresetChange = useCallback((preset: FilterPreset | undefined) => {
+        setActivePreset(preset);
+        setActiveUrgencyFilter(undefined);
+        if (preset === 'render_accounts') {
+            setFilters(prev => ({ ...prev, status: 'rendering_accounts' }));
+        }
+        setPage(1);
+    }, []);
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-4">
+            {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <PageHeader
                     title="Projetos"
@@ -164,470 +440,167 @@ export default function ProjectsPage() {
                 />
             </div>
 
-            {/* KPI Cards */}
-            <ProjectStatsCards 
-                stats={data?.stats} 
-                onFilterClick={(status) => {
-                    setFilterStatus(status);
-                    setPage(1);
-                }}
-                currentFilter={filterStatus}
+            {/* Urgency Cards - Mini Dashboard */}
+            <UrgencyCards
+                counts={urgencyCounts}
+                onCardClick={handleUrgencyCardClick}
+                activeFilter={activeUrgencyFilter}
             />
-            
-            <Card className="border-2 transition-all duration-200">
-                <CardHeader className="pb-4 border-b">
-                    <div className="flex items-center justify-between">
-                        <CardTitle className="text-base font-semibold flex items-center gap-2.5">
-                            <div className="p-1.5 rounded-md bg-primary/10">
-                                <Filter className="h-4 w-4 text-primary" />
-                            </div>
-                            Filtros de Busca
-                        </CardTitle>
-                        {hasActiveFilters && (
-                            <div className="flex items-center gap-2">
-                                <Badge variant="secondary" className="text-xs font-medium px-2.5 py-1">
-                                    {activeFiltersCount} {activeFiltersCount === 1 ? 'filtro ativo' : 'filtros ativos'}
-                                </Badge>
-                                <Button 
-                                    variant="ghost" 
-                                    size="sm" 
-                                    onClick={clearFilters} 
-                                    className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
-                                    title="Limpar todos os filtros"
-                                >
-                                    <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
-                                    Limpar
-                                </Button>
-                            </div>
-                        )}
-                    </div>
-                </CardHeader>
-                <CardContent className="pt-6">
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-                        {/* Busca */}
-                        <div className="space-y-2">
-                            <label className="text-xs font-medium text-foreground flex items-center gap-1.5">
-                                <Search className="h-3.5 w-3.5 text-muted-foreground" />
-                                Buscar
-                            </label>
-                            <div className="relative">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-                                <Input
-                                    placeholder="Projeto, centro de custo..."
-                                    value={search}
-                                    onChange={handleSearch}
-                                    className="pl-9 pr-8 h-10 w-full text-sm border-2 focus:border-primary/50 transition-colors truncate"
-                                />
-                                {search && (
-                                    <button
-                                        type="button"
-                                        className="absolute right-2 top-1/2 -translate-y-1/2 h-6 w-6 flex items-center justify-center hover:bg-muted rounded-md transition-colors"
-                                        onClick={() => { setSearch(''); setPage(1); }}
-                                        title="Limpar busca"
-                                    >
-                                        <X className="h-3.5 w-3.5 text-muted-foreground" />
-                                    </button>
-                                )}
-                            </div>
-                        </div>
 
-                        {/* Coordenador */}
-                        <div className="space-y-2">
-                            <label className="text-xs font-medium text-foreground flex items-center gap-1.5">
-                                <User className="h-3.5 w-3.5 text-muted-foreground" />
-                                Coordenador
-                            </label>
-                            <div className="relative">
-                                <Select value={filterCoordinator || undefined} onValueChange={(value) => { setFilterCoordinator(value); setPage(1); }}>
-                                    <SelectTrigger className="h-10 w-full text-sm border-2 focus:border-primary/50 transition-colors pr-8 [&>span]:truncate [&>span]:max-w-full">
-                                        <SelectValue placeholder="Todos os coordenadores" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {uniqueCoordinators.length > 0 ? (
-                                            uniqueCoordinators.map((coord: string) => (
-                                                <SelectItem key={coord} value={coord}>{coord}</SelectItem>
-                                            ))
-                                        ) : (
-                                            <SelectItem value="no-data" disabled>Nenhum disponível</SelectItem>
-                                        )}
-                                    </SelectContent>
-                                </Select>
-                                {filterCoordinator && (
-                                    <button
-                                        type="button"
-                                        className="absolute right-8 top-1/2 -translate-y-1/2 h-6 w-6 flex items-center justify-center hover:bg-muted rounded-md transition-colors z-10"
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            e.preventDefault();
-                                            setFilterCoordinator('');
-                                            setPage(1);
-                                        }}
-                                        title="Limpar coordenador"
-                                    >
-                                        <X className="h-3.5 w-3.5 text-muted-foreground" />
-                                    </button>
-                                )}
-                            </div>
-                        </div>
+            {/* Quick Filter Chips */}
+            <QuickFilterChips
+                activePreset={activePreset}
+                onPresetChange={handlePresetChange}
+                counts={{
+                    critical: urgencyCounts.critical,
+                    urgentWeek: urgencyCounts.urgentWeek,
+                    renderingAccounts: urgencyCounts.renderingAccounts,
+                    renderingUrgent: urgencyCounts.renderingUrgent,
+                    highExecution: filterCounts.byExecution.high + filterCounts.byExecution.exceeded,
+                }}
+            />
 
-                        {/* Cliente */}
-                        <div className="space-y-2">
-                            <label className="text-xs font-medium text-foreground flex items-center gap-1.5">
-                                <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
-                                Cliente
-                            </label>
-                            <div className="relative">
-                                <Select value={filterClient || undefined} onValueChange={(value) => { setFilterClient(value); setPage(1); }}>
-                                    <SelectTrigger className="h-10 w-full text-sm border-2 focus:border-primary/50 transition-colors pr-8 [&>span]:truncate [&>span]:max-w-full">
-                                        <SelectValue placeholder="Todos os clientes" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {uniqueClients.length > 0 ? (
-                                            uniqueClients.map((client: string) => (
-                                                <SelectItem key={client} value={client}>{client}</SelectItem>
-                                            ))
-                                        ) : (
-                                            <SelectItem value="no-data" disabled>Nenhum disponível</SelectItem>
-                                        )}
-                                    </SelectContent>
-                                </Select>
-                                {filterClient && (
-                                    <button
-                                        type="button"
-                                        className="absolute right-8 top-1/2 -translate-y-1/2 h-6 w-6 flex items-center justify-center hover:bg-muted rounded-md transition-colors z-10"
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            e.preventDefault();
-                                            setFilterClient('');
-                                            setPage(1);
-                                        }}
-                                        title="Limpar cliente"
-                                    >
-                                        <X className="h-3.5 w-3.5 text-muted-foreground" />
-                                    </button>
-                                )}
-                            </div>
-                        </div>
+            {/* Main Content with Sidebar */}
+            <div className="flex gap-4">
+                {/* Filters Sidebar */}
+                    <FiltersSidebar
+                        filters={filters}
+                        onFiltersChange={handleFiltersChange}
+                        onClearFilters={handleClearFilters}
+                        onSaveFilter={() => setIsSaveFilterOpen(true)}
+                        counts={filterCounts}
+                        coordinators={coordinators}
+                        clients={clients}
+                        isOpen={isSidebarOpen}
+                        onToggle={() => setIsSidebarOpen(!isSidebarOpen)}
+                        projects={allProjects}
+                    />
 
-                        {/* Data Início */}
-                        <div className="space-y-2">
-                            <label className="text-xs font-medium text-foreground flex items-center gap-1.5">
-                                <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
-                                Data Início
-                            </label>
-                            <Input 
-                                type="date" 
-                                value={startDate} 
-                                onChange={(e) => { setStartDate(e.target.value); setPage(1); }}
-                                className="h-10 w-full text-sm border-2 focus:border-primary/50 transition-colors"
-                            />
-                        </div>
-
-                        {/* Data Fim */}
-                        <div className="space-y-2">
-                            <label className="text-xs font-medium text-foreground flex items-center gap-1.5">
-                                <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
-                                Data Fim
-                            </label>
-                            <Input 
-                                type="date" 
-                                value={endDate} 
-                                onChange={(e) => { setEndDate(e.target.value); setPage(1); }}
-                                className="h-10 w-full text-sm border-2 focus:border-primary/50 transition-colors"
-                            />
-                        </div>
-                    </div>
-
-                    {/* Toggle Aprovados/Não Aprovados */}
-                    <div className="mt-5 pt-4 border-t">
-                        <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                                <div className="flex items-center gap-2.5">
-                                    <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
-                                    <Label htmlFor="approved-toggle" className="text-sm font-medium cursor-pointer">
-                                        Apenas projetos aprovados
-                                    </Label>
-                                </div>
-                            </div>
-                            <Switch
-                                id="approved-toggle"
-                                checked={showApprovedOnly}
-                                onCheckedChange={(checked) => {
-                                    setShowApprovedOnly(checked);
-                                    setPage(1);
-                                }}
-                            />
-                        </div>
-                        <p className="text-xs text-muted-foreground mt-2 ml-7">
-                            {showApprovedOnly 
-                                ? 'Exibindo apenas projetos com orçamento aprovado e não bloqueados'
-                                : 'Exibindo todos os projetos (aprovados e não aprovados)'}
-                        </p>
-                    </div>
-
-                    {/* Tags de Filtros Ativos */}
-                    {hasActiveFilters && (
-                        <div className="mt-5 pt-4 border-t">
-                            <div className="flex flex-wrap items-center gap-2">
-                                <span className="text-xs font-medium text-muted-foreground">Filtros aplicados:</span>
-                                {search && (
-                                    <Badge variant="secondary" className="text-xs px-2.5 py-1 font-normal">
-                                        Busca: "{search}"
-                                        <button
-                                            onClick={() => { setSearch(''); setPage(1); }}
-                                            className="ml-1.5 hover:bg-muted-foreground/20 rounded-full p-0.5 transition-colors"
-                                        >
-                                            <X className="h-3 w-3" />
-                                        </button>
-                                    </Badge>
-                                )}
-                                {filterCoordinator && (
-                                    <Badge variant="secondary" className="text-xs px-2.5 py-1 font-normal">
-                                        Coordenador: {filterCoordinator}
-                                        <button
-                                            onClick={() => { setFilterCoordinator(''); setPage(1); }}
-                                            className="ml-1.5 hover:bg-muted-foreground/20 rounded-full p-0.5 transition-colors"
-                                        >
-                                            <X className="h-3 w-3" />
-                                        </button>
-                                    </Badge>
-                                )}
-                                {filterClient && (
-                                    <Badge variant="secondary" className="text-xs px-2.5 py-1 font-normal">
-                                        Cliente: {filterClient}
-                                        <button
-                                            onClick={() => { setFilterClient(''); setPage(1); }}
-                                            className="ml-1.5 hover:bg-muted-foreground/20 rounded-full p-0.5 transition-colors"
-                                        >
-                                            <X className="h-3 w-3" />
-                                        </button>
-                                    </Badge>
-                                )}
-                                {startDate !== '2023-01-01' && (
-                                    <Badge variant="secondary" className="text-xs px-2.5 py-1 font-normal">
-                                        Início: {new Date(startDate).toLocaleDateString('pt-BR')}
-                                        <button
-                                            onClick={() => { setStartDate('2023-01-01'); setPage(1); }}
-                                            className="ml-1.5 hover:bg-muted-foreground/20 rounded-full p-0.5 transition-colors"
-                                        >
-                                            <X className="h-3 w-3" />
-                                        </button>
-                                    </Badge>
-                                )}
-                                {endDate && (
-                                    <Badge variant="secondary" className="text-xs px-2.5 py-1 font-normal">
-                                        Fim: {new Date(endDate).toLocaleDateString('pt-BR')}
-                                        <button
-                                            onClick={() => { setEndDate(''); setPage(1); }}
-                                            className="ml-1.5 hover:bg-muted-foreground/20 rounded-full p-0.5 transition-colors"
-                                        >
-                                            <X className="h-3 w-3" />
-                                        </button>
-                                    </Badge>
-                                )}
-                                {filterStatus && (
-                                    <Badge variant="secondary" className="text-xs px-2.5 py-1 font-normal">
-                                        Status: {
-                                            filterStatus === 'in_execution' ? 'Em Execução' : 
-                                            filterStatus === 'rendering_accounts' ? 'Prestar Contas' : 
-                                            filterStatus === 'finished' ? 'Finalizados' :
-                                            filterStatus === 'all' ? 'Todos' : 'Ativos'
-                                        }
-                                        <button
-                                            onClick={() => { setFilterStatus(''); setPage(1); }}
-                                            className="ml-1.5 hover:bg-muted-foreground/20 rounded-full p-0.5 transition-colors"
-                                        >
-                                            <X className="h-3 w-3" />
-                                        </button>
-                                    </Badge>
-                                )}
-                                {showApprovedOnly && (
-                                    <Badge variant="secondary" className="text-xs px-2.5 py-1 font-normal">
-                                        Apenas aprovados
-                                        <button
-                                            onClick={() => { setShowApprovedOnly(false); setPage(1); }}
-                                            className="ml-1.5 hover:bg-muted-foreground/20 rounded-full p-0.5 transition-colors"
-                                        >
-                                            <X className="h-3 w-3" />
-                                        </button>
-                                    </Badge>
-                                )}
-                            </div>
-                        </div>
+                {/* Main Content Area */}
+                <div className="flex-1 min-w-0 space-y-4">
+                    {/* Toggle Sidebar Button (when closed) */}
+                    {!isSidebarOpen && (
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setIsSidebarOpen(true)}
+                            className="gap-2"
+                        >
+                            <PanelLeft className="h-4 w-4" />
+                            Filtros
+                        </Button>
                     )}
-                </CardContent>
-            </Card>
 
-            <Card className="overflow-hidden">
-                <div className="overflow-x-auto scrollbar-thin scrollbar-thumb-muted scrollbar-track-transparent">
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead className="w-[90px]">Custo</TableHead>
-                                <TableHead className="min-w-[180px]">Descrição / Cliente</TableHead>
-                                <TableHead className="w-[120px]">Período</TableHead>
-                                <TableHead className="w-[140px]">Cronograma</TableHead>
-                                <TableHead className="w-[140px]">Coordenador</TableHead>
-                                <TableHead className="text-right w-[120px]">Orçamento</TableHead>
-                                <TableHead className="text-right w-[120px]">Realizado</TableHead>
-                                <TableHead className="w-[160px]">Execução Financeira</TableHead>
-                                <TableHead className="w-[50px]"></TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {isLoading ? (
-                                Array.from({ length: 5 }).map((_, i) => (
-                                    <TableRow key={i}>
-                                        <TableCell className="py-2"><Skeleton className="h-3 w-16" /></TableCell>
-                                        <TableCell className="py-2">
-                                            <Skeleton className="h-3 w-40 mb-1.5" />
-                                            <Skeleton className="h-2.5 w-28" />
-                                        </TableCell>
-                                        <TableCell className="py-2"><Skeleton className="h-3 w-20" /></TableCell>
-                                        <TableCell className="py-2"><Skeleton className="h-3 w-full" /></TableCell>
-                                        <TableCell className="py-2"><Skeleton className="h-3 w-28" /></TableCell>
-                                        <TableCell className="text-right py-2"><Skeleton className="h-3 w-20 ml-auto" /></TableCell>
-                                        <TableCell className="text-right py-2"><Skeleton className="h-3 w-20 ml-auto" /></TableCell>
-                                        <TableCell className="py-2"><Skeleton className="h-6 w-full" /></TableCell>
-                                        <TableCell className="py-2"><Skeleton className="h-6 w-6 rounded" /></TableCell>
-                                    </TableRow>
-                                ))
-                            ) : error ? (
-                                <TableRow>
-                                    <TableCell colSpan={8} className="h-32 text-center">
-                                        <div className="flex flex-col items-center justify-center gap-3 py-4">
-                                            <AlertCircle className="h-8 w-8 text-destructive" />
-                                            <div>
-                                                <p className="font-medium text-destructive">Erro ao carregar projetos</p>
-                                                <p className="text-sm text-muted-foreground mt-1">Tente novamente em alguns instantes</p>
-                                            </div>
-                                            <Button variant="outline" size="sm" onClick={() => refetch()}>
-                                                Tentar novamente
-                                            </Button>
-                                        </div>
-                                    </TableCell>
-                                </TableRow>
-                            ) : projects.length > 0 ? (
-                                projects.map((project) => {
-                                    const usagePercent = project.usage_percent || 0;
-                                    return (
-                                        <TableRow key={project.CTT_CUSTO} className="group">
-                                            <TableCell className="font-semibold text-xs py-2">{project.CTT_CUSTO}</TableCell>
-                                            <TableCell className="py-2">
-                                                <div className="font-medium text-xs truncate max-w-[180px] flex items-center gap-1.5" title={project.CTT_DESC01}>
-                                                    {project.CTT_DESC01 || 'Sem Descrição'}
-                                                    <ProjectAlerts project={project} />
-                                                </div>
-                                                {project.CTT_UNIDES && (
-                                                    <div className="text-[10px] text-muted-foreground truncate max-w-[180px] mt-0.5">
-                                                        {project.CTT_UNIDES}
-                                                    </div>
-                                                )}
-                                                <div className="flex flex-wrap gap-1 mt-1">
-                                                  <Badge variant="outline" className="text-[9px] px-1 h-4 font-normal border-muted-foreground/30 text-muted-foreground">
-                                                    {getProjectClassification(project.CTT_CLAPRJ)}
-                                                  </Badge>
-                                                  <Badge variant="outline" className="text-[9px] px-1 h-4 font-normal border-muted-foreground/30 text-muted-foreground">
-                                                    {getServiceType(project.CTT_TPCONV)}
-                                                  </Badge>
-                                                </div>
-                                            </TableCell>
-                                            <TableCell className="py-2">
-                                                <div className="text-xs whitespace-nowrap">
-                                                    {formatDate(project.CTT_DTINI)} <br/> 
-                                                    <span className="text-muted-foreground text-[10px]">até</span> {formatDate(project.CTT_DTFIM)}
-                                                    <div className="mt-1">
-                                                        {getVigenciaBadge(project.CTT_DTINI, project.CTT_DTFIM)}
-                                                    </div>
-                                                </div>
-                                            </TableCell>
-                                            <TableCell className="py-2">
-                                                <ProjectTimeline startDate={project.CTT_DTINI} endDate={project.CTT_DTFIM} />
-                                            </TableCell>
-                                            <TableCell className="py-2">
-                                                <div className="text-xs font-medium truncate max-w-[140px]" title={project.CTT_NOMECO}>
-                                                    {project.CTT_NOMECO || '-'}
-                                                </div>
-                                                {(project.CTT_ANADES || project.CTT_ANALIS) && (
-                                                    <div className="text-[10px] text-muted-foreground truncate max-w-[140px] mt-0.5">
-                                                        Analista: {project.CTT_ANADES || project.CTT_ANALIS}
-                                                    </div>
-                                                )}
-                                            </TableCell>
-                                            <TableCell className="text-right py-2">
-                                                <div className="font-semibold text-xs whitespace-nowrap">
-                                                    {formatCurrency(project.budget || 0)}
-                                                </div>
-                                            </TableCell>
-                                            <TableCell className="text-right py-2">
-                                                <div className="text-xs whitespace-nowrap">
-                                                    {formatCurrency(project.realized || 0)}
-                                                </div>
-                                            </TableCell>
-                                            <TableCell className="py-2">
-                                                <div className="space-y-1.5 min-w-[140px]">
-                                                    <ProgressBar value={usagePercent} />
-                                                    <div className="flex items-center justify-between gap-1.5 flex-wrap">
-                                                        <div className="text-[10px] font-medium whitespace-nowrap">
-                                                            {usagePercent.toFixed(1)}%
-                                                        </div>
-                                                        <div className="flex-shrink-0 scale-90">
-                                                            {getStatusBadge(usagePercent)}
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </TableCell>
-                                            <TableCell className="py-2">
-                                                <Link href={`/dashboard/projects/${project.CTT_CUSTO}`}>
-                                                    <Button 
-                                                        variant="ghost" 
-                                                        size="icon" 
-                                                        className="h-7 w-7 hover:bg-primary/10"
-                                                        title="Ver Detalhes"
-                                                    >
-                                                        <ArrowRight className="h-3.5 w-3.5" />
-                                                    </Button>
-                                                </Link>
-                                            </TableCell>
-                                        </TableRow>
-                                    );
-                                })
+                    {/* Stats Cards */}
+                    <ProjectStatsCards 
+                        stats={data?.stats} 
+                        onFilterClick={handleStatusFilterClick}
+                        currentFilter={filters.status}
+                    />
+
+                    {/* Toolbar */}
+                    <TableToolbar
+                        viewMode={viewMode}
+                        onViewModeChange={setViewMode}
+                        selectedCount={selectedRows.length}
+                        totalCount={filteredProjects.length}
+                        visibleColumns={visibleColumns}
+                        onColumnVisibilityChange={handleColumnVisibilityChange}
+                        onExport={handleExport}
+                        onCompare={() => setIsCompareOpen(true)}
+                    />
+
+                    {/* Content */}
+                    {viewMode === 'cards' ? (
+                        <ProjectsGrid
+                            projects={filteredProjects}
+                            selectedIds={selectedRows.map(r => r.CTT_CUSTO)}
+                            onSelect={handleGridSelect}
+                            isLoading={isLoading}
+                        />
+                    ) : (
+                        <Card className="overflow-hidden">
+                            {error ? (
+                                <div className="flex flex-col items-center justify-center gap-3 py-16">
+                                    <AlertCircle className="h-8 w-8 text-destructive" />
+                                    <div className="text-center">
+                                        <p className="font-medium text-destructive">Erro ao carregar projetos</p>
+                                        <p className="text-sm text-muted-foreground mt-1">Tente novamente em alguns instantes</p>
+                                    </div>
+                                    <Button variant="outline" size="sm" onClick={() => refetch()}>
+                                        Tentar novamente
+                                    </Button>
+                                </div>
                             ) : (
-                                <TableRow>
-                                    <TableCell colSpan={8} className="h-40 text-center">
+                                <DataTable
+                                    columns={columns}
+                                    data={filteredProjects}
+                                    onRowSelectionChange={handleRowSelection}
+                                    onRowClick={(project) => {
+                                        window.location.href = `/dashboard/projects/${project.CTT_CUSTO}`
+                                    }}
+                                    columnVisibility={columnVisibility}
+                                    isLoading={isLoading}
+                                    emptyMessage={
                                         <div className="flex flex-col items-center justify-center gap-3 py-8">
                                             <FileText className="h-12 w-12 text-muted-foreground/50" />
-                                            <div>
+                                            <div className="text-center">
                                                 <p className="font-medium text-foreground">Nenhum projeto encontrado</p>
                                                 <p className="text-sm text-muted-foreground mt-1">
-                                                    {activeFiltersCount > 0 
-                                                        ? 'Tente ajustar os filtros selecionados'
-                                                        : 'Não há projetos cadastrados no momento'}
+                                                    Tente ajustar os filtros selecionados
                                                 </p>
                                             </div>
-                                            {activeFiltersCount > 0 && (
-                                                <Button variant="outline" size="sm" onClick={clearFilters} className="h-8 text-xs">
-                                                    Limpar filtros
-                                                </Button>
-                                            )}
+                                            <Button variant="outline" size="sm" onClick={handleClearFilters}>
+                                                Limpar filtros
+                                            </Button>
                                         </div>
-                                    </TableCell>
-                                </TableRow>
+                                    }
+                                />
                             )}
-                        </TableBody>
-                    </Table>
+                            
+                            {/* Pagination */}
+                            {filteredProjects.length > 0 && (
+                                <div className="border-t bg-muted/30 px-4 py-3">
+                                    <Pagination 
+                                        page={page} 
+                                        totalPages={totalPages}
+                                        totalItems={totalItems}
+                                        itemsPerPage={itemsPerPage}
+                                        onPageChange={setPage}
+                                        onItemsPerPageChange={(items) => {
+                                            setItemsPerPage(items);
+                                            setPage(1);
+                                        }}
+                                    />
+                                </div>
+                            )}
+                        </Card>
+                    )}
                 </div>
-                
-                {projects.length > 0 && (
-                    <div className="border-t bg-muted/30 px-4 py-3">
-                        <Pagination 
-                            page={page} 
-                            totalPages={totalPages} 
-                            onPageChange={setPage} 
-                        />
-                    </div>
-                )}
-            </Card>
+            </div>
+
+            {/* Bulk Actions Bar */}
+            <BulkActionsBar
+                count={selectedRows.length}
+                onCompare={() => setIsCompareOpen(true)}
+                onExport={(format) => handleExport(format, true)}
+                onClear={() => setSelectedRows([])}
+            />
+
+            {/* Comparison Modal */}
+            <ComparisonModal
+                isOpen={isCompareOpen}
+                onClose={() => setIsCompareOpen(false)}
+                projects={selectedRows.slice(0, 4)}
+            />
+
+            {/* Save Filter Modal */}
+            <SaveFilterModal
+                isOpen={isSaveFilterOpen}
+                onClose={() => setIsSaveFilterOpen(false)}
+                onSave={handleSaveFilter}
+                filters={filters}
+            />
         </div>
-    )
+    );
 }

@@ -205,14 +205,13 @@ def read_projects(
         # Get all realized amounts in one query
         realized_dict = {}
         if custos_list:
-            # Realized = PAD_APAGAR + PAD_REALIZ
+            # Realized = PAD_APAGAR + PAD_REALIZ where PAD_NATURE > 4 dígitos
             realized_results = db.query(
                 PAD010.PAD_CUSTO,
                 func.sum(func.coalesce(PAD010.PAD_APAGAR, 0) + func.coalesce(PAD010.PAD_REALIZ, 0)).label('realized')
             ).filter(
                 PAD010.PAD_CUSTO.in_(custos_list),
-                func.length(PAD010.PAD_NATURE) <= 4,
-                PAD010.PAD_NATURE != '0001'
+                func.length(PAD010.PAD_NATURE) > 4
             ).group_by(PAD010.PAD_CUSTO).all()
             
             # Handle both Row objects and tuples
@@ -364,12 +363,11 @@ def read_project(
     p_dict = object_as_dict(project)
     
     # Add realized amount
-    # Realized = Sum(PAD_APAGAR + PAD_REALIZ) where length(PAD_NATURE) <= 4 AND PAD_NATURE != '0001'
+    # Realized = Sum(PAD_APAGAR + PAD_REALIZ) where length(PAD_NATURE) > 4 dígitos
     realized = db.query(func.sum(func.coalesce(PAD010.PAD_APAGAR, 0) + func.coalesce(PAD010.PAD_REALIZ, 0)))\
         .filter(
             PAD010.PAD_CUSTO == custo,
-            func.length(PAD010.PAD_NATURE) <= 4,
-            PAD010.PAD_NATURE != '0001'
+            func.length(PAD010.PAD_NATURE) > 4
         )\
         .scalar() or 0.0
     
