@@ -210,3 +210,4 @@ def comparar_pad010():
 if __name__ == "__main__":
     comparar_pad010()
 
+

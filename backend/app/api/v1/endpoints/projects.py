@@ -1,13 +1,20 @@
 from typing import Any, List, Optional
 from datetime import datetime, timedelta
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query, HTTPException, UploadFile, File, Form
 from sqlalchemy.orm import Session
 from sqlalchemy import func, select
 from app.api import deps
-from app.models.protheus import CTT010, PAC010, PAD010
+from app.models.protheus import CTT010, PAC010, PAD010, SC6010
 from app.models.base import Base
 from app.schemas.project import ProjectCreate
+from app.schemas.notes import ProjectNoteCreate, ProjectNoteUpdate, ProjectNoteResponse
+from app.schemas.attachments import ProjectAttachmentResponse
 from sqlalchemy.inspection import inspect
+import json
+import os
+import uuid
+import shutil
+from pathlib import Path
 
 router = APIRouter()
 
@@ -224,6 +231,36 @@ def read_projects(
                 except Exception as e:
                     print(f"Error processing realized row: {e}, row type: {type(row)}")
                     continue
+            
+            # Get all billing provisions (SC6010) in one query
+            # Subtrair provisões de faturamento onde C6_Serie e C8_Nota não estão vazios
+            billing_provisions_results = db.query(
+                SC6010.C6_CUSTO,
+                func.sum(SC6010.C6_PRCVEN).label('billing_provisions')
+            ).filter(
+                SC6010.C6_CUSTO.in_(custos_list),
+                SC6010.D_E_L_E_T_ != '*',
+                SC6010.C6_SERIE.isnot(None),
+                SC6010.C6_SERIE != '',
+                SC6010.C8_NOTA.isnot(None),
+                SC6010.C8_NOTA != ''
+            ).group_by(SC6010.C6_CUSTO).all()
+            
+            # Create dict of billing provisions
+            billing_provisions_dict = {}
+            for row in billing_provisions_results:
+                try:
+                    custo = row.C6_CUSTO.strip() if hasattr(row, 'C6_CUSTO') else str(row[0]).strip()
+                    provisions = float(row.billing_provisions or 0.0) if hasattr(row, 'billing_provisions') else float(row[1] or 0.0)
+                    billing_provisions_dict[custo] = provisions
+                except Exception as e:
+                    print(f"Error processing billing provisions row: {e}, row type: {type(row)}")
+                    continue
+            
+            # Subtrair provisões do realizado
+            for custo in realized_dict:
+                if custo in billing_provisions_dict:
+                    realized_dict[custo] -= billing_provisions_dict[custo]
         
         # Build response data using pre-fetched values
         data = []
@@ -374,8 +411,348 @@ def read_project(
     # Add Budget from CTT010.CTT_SALINI
     budget = float(project.CTT_SALINI or 0.0)
     
-    p_dict['realized'] = float(realized)
+    # Subtrair provisões de faturamento (SC6010)
+    # Soma dos C6_PRCVEN onde C6_Serie e C8_Nota não estão vazios
+    billing_provisions = db.query(func.sum(SC6010.C6_PRCVEN))\
+        .filter(
+            SC6010.C6_CUSTO == custo,
+            SC6010.D_E_L_E_T_ != '*',
+            SC6010.C6_SERIE.isnot(None),
+            SC6010.C6_SERIE != '',
+            SC6010.C8_NOTA.isnot(None),
+            SC6010.C8_NOTA != ''
+        )\
+        .scalar() or 0.0
+    
+    # Realizado ajustado = Realizado - Provisões de Faturamento
+    realized_adjusted = float(realized) - float(billing_provisions)
+    
+    p_dict['realized'] = realized_adjusted
     p_dict['budget'] = budget
     p_dict['initial_balance'] = budget
+    p_dict['billing_provisions'] = float(billing_provisions)  # Provisões que foram subtraídas
     
     return p_dict
+
+@router.get("/{custo}/billing", response_model=dict)
+def get_project_billing(
+    custo: str,
+    db: Session = Depends(deps.get_db),
+    current_user: str = Depends(deps.get_current_user),
+) -> Any:
+    """
+    Get billing data (faturamento) for a specific project from SC6010.
+    Returns all billing entries with C6_PRCVEN where C6_Serie and C8_Nota are not empty.
+    """
+    # Verificar se o projeto existe
+    project = db.query(CTT010).filter(CTT010.CTT_CUSTO == custo).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Projeto não encontrado")
+    
+    # Buscar todos os registros de faturamento do projeto
+    # Filtrar apenas onde C6_Serie e C8_Nota não estão vazios
+    billing_records = db.query(SC6010)\
+        .filter(
+            SC6010.C6_CUSTO == custo,
+            SC6010.D_E_L_E_T_ != '*',
+            SC6010.C6_SERIE.isnot(None),
+            SC6010.C6_SERIE != '',
+            SC6010.C8_NOTA.isnot(None),
+            SC6010.C8_NOTA != ''
+        )\
+        .order_by(SC6010.C6_ITEM)\
+        .all()
+    
+    # Converter para dicionário
+    billing_list = []
+    total_billing = 0.0
+    
+    for record in billing_records:
+        billing_dict = object_as_dict(record)
+        billing_value = float(record.C6_PRCVEN or 0.0)
+        total_billing += billing_value
+        billing_dict['C6_PRCVEN'] = billing_value
+        billing_list.append(billing_dict)
+    
+    return {
+        "project_code": custo,
+        "project_name": project.CTT_DESC01 or "",
+        "billing_records": billing_list,
+        "total_billing": total_billing,
+        "count": len(billing_list)
+    }
+
+# ==================== NOTES ENDPOINTS ====================
+
+# Diretório para armazenar dados JSON (usar caminho absoluto baseado no diretório do projeto)
+BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent.parent  # Volta até a raiz do projeto
+DATA_DIR = BASE_DIR / "backend" / "data"
+NOTES_FILE = DATA_DIR / "project_notes.json"
+ATTACHMENTS_DIR = DATA_DIR / "attachments"
+ATTACHMENTS_FILE = DATA_DIR / "project_attachments.json"
+
+# Garantir que os diretórios existam
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+ATTACHMENTS_DIR.mkdir(parents=True, exist_ok=True)
+
+def load_notes() -> dict:
+    """Carrega notas do arquivo JSON"""
+    if NOTES_FILE.exists():
+        try:
+            with open(NOTES_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except:
+            return {}
+    return {}
+
+def save_notes(notes: dict):
+    """Salva notas no arquivo JSON"""
+    with open(NOTES_FILE, 'w', encoding='utf-8') as f:
+        json.dump(notes, f, ensure_ascii=False, indent=2)
+
+def load_attachments() -> dict:
+    """Carrega anexos do arquivo JSON"""
+    if ATTACHMENTS_FILE.exists():
+        try:
+            with open(ATTACHMENTS_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except:
+            return {}
+    return {}
+
+def save_attachments(attachments: dict):
+    """Salva anexos no arquivo JSON"""
+    with open(ATTACHMENTS_FILE, 'w', encoding='utf-8') as f:
+        json.dump(attachments, f, ensure_ascii=False, indent=2)
+
+@router.get("/{project_id}/notes", response_model=List[ProjectNoteResponse])
+def get_project_notes(
+    project_id: str,
+    current_user: str = Depends(deps.get_current_user),
+) -> Any:
+    """Lista todas as notas de um projeto"""
+    notes = load_notes()
+    project_notes = notes.get(project_id, [])
+    return project_notes
+
+@router.post("/{project_id}/notes", response_model=ProjectNoteResponse)
+def create_project_note(
+    project_id: str,
+    note_in: ProjectNoteCreate,
+    current_user: str = Depends(deps.get_current_user),
+) -> Any:
+    """Cria uma nova nota para o projeto"""
+    notes = load_notes()
+    
+    if project_id not in notes:
+        notes[project_id] = []
+    
+    note_id = str(uuid.uuid4())
+    now = datetime.utcnow().isoformat()
+    
+    new_note = {
+        "id": note_id,
+        "project_id": project_id,
+        "content": note_in.content,
+        "author": current_user,
+        "created_at": now,
+        "updated_at": None
+    }
+    
+    notes[project_id].append(new_note)
+    save_notes(notes)
+    
+    return new_note
+
+@router.put("/{project_id}/notes/{note_id}", response_model=ProjectNoteResponse)
+def update_project_note(
+    project_id: str,
+    note_id: str,
+    note_in: ProjectNoteUpdate,
+    current_user: str = Depends(deps.get_current_user),
+) -> Any:
+    """Atualiza uma nota existente"""
+    notes = load_notes()
+    
+    if project_id not in notes:
+        raise HTTPException(status_code=404, detail="Projeto não encontrado")
+    
+    note_index = None
+    for i, note in enumerate(notes[project_id]):
+        if note["id"] == note_id:
+            note_index = i
+            break
+    
+    if note_index is None:
+        raise HTTPException(status_code=404, detail="Nota não encontrada")
+    
+    notes[project_id][note_index]["content"] = note_in.content
+    notes[project_id][note_index]["updated_at"] = datetime.utcnow().isoformat()
+    
+    save_notes(notes)
+    
+    return notes[project_id][note_index]
+
+@router.delete("/{project_id}/notes/{note_id}")
+def delete_project_note(
+    project_id: str,
+    note_id: str,
+    current_user: str = Depends(deps.get_current_user),
+) -> Any:
+    """Deleta uma nota"""
+    notes = load_notes()
+    
+    if project_id not in notes:
+        raise HTTPException(status_code=404, detail="Projeto não encontrado")
+    
+    notes[project_id] = [n for n in notes[project_id] if n["id"] != note_id]
+    save_notes(notes)
+    
+    return {"message": "Nota deletada com sucesso"}
+
+# ==================== ATTACHMENTS ENDPOINTS ====================
+
+@router.get("/{project_id}/attachments", response_model=List[ProjectAttachmentResponse])
+def get_project_attachments(
+    project_id: str,
+    current_user: str = Depends(deps.get_current_user),
+) -> Any:
+    """Lista todos os anexos de um projeto"""
+    attachments = load_attachments()
+    project_attachments = attachments.get(project_id, [])
+    return project_attachments
+
+@router.post("/{project_id}/attachments", response_model=ProjectAttachmentResponse)
+def upload_project_attachment(
+    project_id: str,
+    file: UploadFile = File(...),
+    category: str = Form(...),
+    current_user: str = Depends(deps.get_current_user),
+) -> Any:
+    """Faz upload de um anexo para o projeto"""
+    # Validar categoria
+    valid_categories = ['contract', 'invoice', 'report', 'other']
+    if category not in valid_categories:
+        raise HTTPException(status_code=400, detail=f"Categoria inválida. Use uma de: {', '.join(valid_categories)}")
+    
+    attachments = load_attachments()
+    
+    if project_id not in attachments:
+        attachments[project_id] = []
+    
+    # Gerar ID único
+    attachment_id = str(uuid.uuid4())
+    
+    # Salvar arquivo
+    file_extension = Path(file.filename).suffix
+    saved_filename = f"{attachment_id}{file_extension}"
+    file_path = ATTACHMENTS_DIR / saved_filename
+    
+    try:
+        with open(file_path, 'wb') as buffer:
+            shutil.copyfileobj(file.file, buffer)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao salvar arquivo: {str(e)}")
+    
+    # Obter tamanho do arquivo
+    file_size = file_path.stat().st_size
+    
+    # Criar registro do anexo
+    now = datetime.utcnow().isoformat()
+    new_attachment = {
+        "id": attachment_id,
+        "project_id": project_id,
+        "filename": file.filename,
+        "category": category,
+        "size": file_size,
+        "uploaded_by": current_user,
+        "uploaded_at": now,
+        "url": f"/api/projects/{project_id}/attachments/{attachment_id}/download"
+    }
+    
+    attachments[project_id].append(new_attachment)
+    save_attachments(attachments)
+    
+    return new_attachment
+
+@router.get("/{project_id}/attachments/{attachment_id}/download")
+def download_project_attachment(
+    project_id: str,
+    attachment_id: str,
+    current_user: str = Depends(deps.get_current_user),
+):
+    """Baixa um anexo"""
+    from fastapi.responses import FileResponse
+    import mimetypes
+    
+    attachments = load_attachments()
+    
+    if project_id not in attachments:
+        raise HTTPException(status_code=404, detail="Projeto não encontrado")
+    
+    attachment = None
+    for att in attachments[project_id]:
+        if att["id"] == attachment_id:
+            attachment = att
+            break
+    
+    if not attachment:
+        raise HTTPException(status_code=404, detail="Anexo não encontrado")
+    
+    # Encontrar arquivo salvo
+    file_path = None
+    for file in ATTACHMENTS_DIR.iterdir():
+        if file.stem == attachment_id:
+            file_path = file
+            break
+    
+    if not file_path or not file_path.exists():
+        raise HTTPException(status_code=404, detail="Arquivo não encontrado no servidor")
+    
+    # Detectar tipo MIME
+    mime_type, _ = mimetypes.guess_type(attachment["filename"])
+    if not mime_type:
+        mime_type = 'application/octet-stream'
+    
+    return FileResponse(
+        path=str(file_path),
+        filename=attachment["filename"],
+        media_type=mime_type
+    )
+
+@router.delete("/{project_id}/attachments/{attachment_id}")
+def delete_project_attachment(
+    project_id: str,
+    attachment_id: str,
+    current_user: str = Depends(deps.get_current_user),
+) -> Any:
+    """Deleta um anexo"""
+    attachments = load_attachments()
+    
+    if project_id not in attachments:
+        raise HTTPException(status_code=404, detail="Projeto não encontrado")
+    
+    # Encontrar e remover anexo
+    attachment_to_delete = None
+    for att in attachments[project_id]:
+        if att["id"] == attachment_id:
+            attachment_to_delete = att
+            break
+    
+    if not attachment_to_delete:
+        raise HTTPException(status_code=404, detail="Anexo não encontrado")
+    
+    # Remover arquivo físico
+    for file in ATTACHMENTS_DIR.iterdir():
+        if file.stem == attachment_id:
+            try:
+                file.unlink()
+            except:
+                pass  # Continua mesmo se não conseguir deletar o arquivo
+            break
+    
+    # Remover do JSON
+    attachments[project_id] = [a for a in attachments[project_id] if a["id"] != attachment_id]
+    save_attachments(attachments)
+    
+    return {"message": "Anexo deletado com sucesso"}

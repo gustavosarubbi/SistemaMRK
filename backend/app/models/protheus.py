@@ -82,3 +82,16 @@ class PAD010(Base):
     PAD_USERGA = Column(String(17))
     PAD_USERGI = Column(String(17))
 
+class SC6010(Base):
+    __tablename__ = "SC6010"
+    
+    R_E_C_N_O_ = Column(Integer, primary_key=True, autoincrement=False)
+    D_E_L_E_T_ = Column(String(1))
+    
+    C6_FILIAL = Column(String(2))
+    C6_CUSTO = Column(String(50), index=True)  # ID Projeto
+    C6_PRCVEN = Column(Float)  # Valor da Parcela
+    C6_ITEM = Column(String(10))  # Número Parcela
+    C6_SERIE = Column(String(3))  # Série (condicional - se vazio, não somar)
+    C8_NOTA = Column(String(9))  # Nota (condicional - se vazio, não somar)
+

@@ -13,6 +13,14 @@ import api from '@/lib/api';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
+import {
+    getAttachmentsFromStorage,
+    saveAttachmentToStorage,
+    deleteAttachmentFromStorage,
+    saveFileToStorage,
+    getFileFromStorage,
+    deleteFileFromStorage,
+} from '@/lib/localStorage-utils';
 
 interface AttachmentsTabProps {
     projectId: string;
@@ -44,10 +52,24 @@ export function AttachmentsTab({ projectId }: AttachmentsTabProps) {
         queryFn: async () => {
             try {
                 const res = await api.get(`/projects/${projectId}/attachments`);
-                return res.data || [];
+                const apiAttachments = res.data || [];
+                
+                // Sincronizar com localStorage
+                const storageAttachments = getAttachmentsFromStorage(projectId);
+                const allAttachments = [...apiAttachments];
+                
+                // Adicionar anexos do localStorage que não estão na API
+                storageAttachments.forEach((storageAtt) => {
+                    if (!allAttachments.find((a) => a.id === storageAtt.id)) {
+                        allAttachments.push(storageAtt);
+                    }
+                });
+                
+                return allAttachments;
             } catch (error) {
-                console.error('Erro ao carregar anexos:', error);
-                return [];
+                console.warn('Erro ao carregar anexos da API, usando localStorage:', error);
+                // Fallback para localStorage
+                return getAttachmentsFromStorage(projectId);
             }
         },
     });
@@ -55,13 +77,38 @@ export function AttachmentsTab({ projectId }: AttachmentsTabProps) {
     // Upload mutation
     const uploadMutation = useMutation({
         mutationFn: async ({ file, category }: { file: File; category: ProjectAttachment['category'] }) => {
-            const formData = new FormData();
-            formData.append('file', file);
-            formData.append('category', category);
-            const res = await api.post(`/projects/${projectId}/attachments`, formData, {
-                headers: { 'Content-Type': 'multipart/form-data' },
-            });
-            return res.data;
+            const attachmentId = `local_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            const now = new Date().toISOString();
+            
+            const newAttachment: ProjectAttachment = {
+                id: attachmentId,
+                project_id: projectId,
+                filename: file.name,
+                category,
+                size: file.size,
+                uploaded_by: 'Usuário', // TODO: pegar do auth store
+                uploaded_at: now,
+                url: `local://${attachmentId}`, // URL especial para arquivos locais
+            };
+            
+            try {
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('category', category);
+                const res = await api.post(`/projects/${projectId}/attachments`, formData, {
+                    headers: { 'Content-Type': 'multipart/form-data' },
+                });
+                const savedAttachment = res.data;
+                // Salvar no localStorage também
+                saveAttachmentToStorage(projectId, savedAttachment);
+                return savedAttachment;
+            } catch (error) {
+                console.warn('Erro ao fazer upload na API, salvando no localStorage:', error);
+                // Fallback: salvar no localStorage
+                await saveFileToStorage(attachmentId, file);
+                saveAttachmentToStorage(projectId, newAttachment);
+                return newAttachment;
+            }
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['project_attachments', projectId] });
@@ -71,7 +118,15 @@ export function AttachmentsTab({ projectId }: AttachmentsTabProps) {
     // Delete mutation
     const deleteMutation = useMutation({
         mutationFn: async (id: string) => {
-            await api.delete(`/projects/${projectId}/attachments/${id}`);
+            try {
+                await api.delete(`/projects/${projectId}/attachments/${id}`);
+            } catch (error) {
+                console.warn('Erro ao deletar anexo na API, deletando do localStorage:', error);
+            } finally {
+                // Sempre deletar do localStorage também
+                deleteAttachmentFromStorage(projectId, id);
+                deleteFileFromStorage(id);
+            }
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['project_attachments', projectId] });
@@ -239,7 +294,22 @@ export function AttachmentsTab({ projectId }: AttachmentsTabProps) {
                                                     <Button
                                                         variant="ghost"
                                                         size="sm"
-                                                        onClick={() => window.open(att.url, '_blank')}
+                                                        onClick={() => {
+                                                            if (att.url.startsWith('local://')) {
+                                                                // Arquivo local: baixar do localStorage
+                                                                const attachmentId = att.url.replace('local://', '');
+                                                                const base64 = getFileFromStorage(attachmentId);
+                                                                if (base64) {
+                                                                    const link = document.createElement('a');
+                                                                    link.href = base64;
+                                                                    link.download = att.filename;
+                                                                    link.click();
+                                                                }
+                                                            } else {
+                                                                // Arquivo do servidor: abrir URL
+                                                                window.open(att.url, '_blank');
+                                                            }
+                                                        }}
                                                     >
                                                         <Download className="h-4 w-4" />
                                                     </Button>
@@ -263,4 +333,5 @@ export function AttachmentsTab({ projectId }: AttachmentsTabProps) {
         </div>
     );
 }
+
 

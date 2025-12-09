@@ -72,3 +72,4 @@ export function ProjectActionsMenu({ projectId, onAddNote, onAddAttachment }: Pr
     );
 }
 
+

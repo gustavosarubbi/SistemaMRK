@@ -12,6 +12,11 @@ import { ProjectNote } from '@/types';
 import api from '@/lib/api';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import {
+    getNotesFromStorage,
+    saveNoteToStorage,
+    deleteNoteFromStorage,
+} from '@/lib/localStorage-utils';
 
 interface NotesTabProps {
     projectId: string;
@@ -29,10 +34,24 @@ export function NotesTab({ projectId }: NotesTabProps) {
         queryFn: async () => {
             try {
                 const res = await api.get(`/projects/${projectId}/notes`);
-                return res.data || [];
+                const apiNotes = res.data || [];
+                
+                // Sincronizar com localStorage
+                const storageNotes = getNotesFromStorage(projectId);
+                const allNotes = [...apiNotes];
+                
+                // Adicionar notas do localStorage que não estão na API
+                storageNotes.forEach((storageNote) => {
+                    if (!allNotes.find((n) => n.id === storageNote.id)) {
+                        allNotes.push(storageNote);
+                    }
+                });
+                
+                return allNotes;
             } catch (error) {
-                console.error('Erro ao carregar notas:', error);
-                return [];
+                console.warn('Erro ao carregar notas da API, usando localStorage:', error);
+                // Fallback para localStorage
+                return getNotesFromStorage(projectId);
             }
         },
     });
@@ -40,8 +59,29 @@ export function NotesTab({ projectId }: NotesTabProps) {
     // Create note mutation
     const createMutation = useMutation({
         mutationFn: async (content: string) => {
-            const res = await api.post(`/projects/${projectId}/notes`, { content });
-            return res.data;
+            const noteId = `local_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            const now = new Date().toISOString();
+            
+            const newNote: ProjectNote = {
+                id: noteId,
+                project_id: projectId,
+                content,
+                author: 'Usuário', // TODO: pegar do auth store
+                created_at: now,
+            };
+            
+            try {
+                const res = await api.post(`/projects/${projectId}/notes`, { content });
+                const savedNote = res.data;
+                // Salvar no localStorage também
+                saveNoteToStorage(projectId, savedNote);
+                return savedNote;
+            } catch (error) {
+                console.warn('Erro ao criar nota na API, salvando no localStorage:', error);
+                // Fallback: salvar no localStorage
+                saveNoteToStorage(projectId, newNote);
+                return newNote;
+            }
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['project_notes', projectId] });
@@ -52,8 +92,28 @@ export function NotesTab({ projectId }: NotesTabProps) {
     // Update note mutation
     const updateMutation = useMutation({
         mutationFn: async ({ id, content }: { id: string; content: string }) => {
-            const res = await api.put(`/projects/${projectId}/notes/${id}`, { content });
-            return res.data;
+            const existingNotes = getNotesFromStorage(projectId);
+            const existingNote = existingNotes.find((n) => n.id === id);
+            
+            const updatedNote: ProjectNote = {
+                ...existingNote!,
+                id,
+                content,
+                updated_at: new Date().toISOString(),
+            };
+            
+            try {
+                const res = await api.put(`/projects/${projectId}/notes/${id}`, { content });
+                const savedNote = res.data;
+                // Salvar no localStorage também
+                saveNoteToStorage(projectId, savedNote);
+                return savedNote;
+            } catch (error) {
+                console.warn('Erro ao atualizar nota na API, salvando no localStorage:', error);
+                // Fallback: salvar no localStorage
+                saveNoteToStorage(projectId, updatedNote);
+                return updatedNote;
+            }
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['project_notes', projectId] });
@@ -65,7 +125,14 @@ export function NotesTab({ projectId }: NotesTabProps) {
     // Delete note mutation
     const deleteMutation = useMutation({
         mutationFn: async (id: string) => {
-            await api.delete(`/projects/${projectId}/notes/${id}`);
+            try {
+                await api.delete(`/projects/${projectId}/notes/${id}`);
+            } catch (error) {
+                console.warn('Erro ao deletar nota na API, deletando do localStorage:', error);
+            } finally {
+                // Sempre deletar do localStorage também
+                deleteNoteFromStorage(projectId, id);
+            }
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['project_notes', projectId] });
@@ -231,4 +298,5 @@ export function NotesTab({ projectId }: NotesTabProps) {
         </div>
     );
 }
+
 

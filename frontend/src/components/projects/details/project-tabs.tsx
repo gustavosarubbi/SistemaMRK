@@ -6,6 +6,7 @@ import { ChartsTab } from './tabs/charts-tab';
 import { MovementsTab } from './tabs/movements-tab';
 import { NotesTab } from './tabs/notes-tab';
 import { AttachmentsTab } from './tabs/attachments-tab';
+import { BillingTab } from './tabs/billing-tab';
 import { Project } from '@/types';
 
 interface ProjectTabsProps {
@@ -35,7 +36,7 @@ export function ProjectTabs({
 
     return (
         <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
-            <TabsList className="grid w-full grid-cols-5 mb-6 overflow-x-auto">
+            <TabsList className="grid w-full grid-cols-6 mb-6 overflow-x-auto">
                 <TabsTrigger value="summary" className="text-xs sm:text-sm whitespace-nowrap">
                     Resumo
                 </TabsTrigger>
@@ -44,6 +45,9 @@ export function ProjectTabs({
                 </TabsTrigger>
                 <TabsTrigger value="movements" className="text-xs sm:text-sm whitespace-nowrap">
                     Movimentações
+                </TabsTrigger>
+                <TabsTrigger value="billing" className="text-xs sm:text-sm whitespace-nowrap">
+                    Faturamento
                 </TabsTrigger>
                 <TabsTrigger value="notes" className="text-xs sm:text-sm whitespace-nowrap">
                     Notas
@@ -74,6 +78,13 @@ export function ProjectTabs({
                     formatDate={formatDate}
                     projectName={project.CTT_DESC01 || 'Projeto'}
                     projectCode={project.CTT_CUSTO}
+                />
+            </TabsContent>
+
+            <TabsContent value="billing" className="mt-0">
+                <BillingTab
+                    projectCode={project.CTT_CUSTO}
+                    projectName={project.CTT_DESC01 || 'Projeto'}
                 />
             </TabsContent>
 
