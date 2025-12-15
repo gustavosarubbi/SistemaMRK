@@ -28,41 +28,6 @@ class CTT010(Base):
     # Metadata fields for sync - Removed as we use SYNC_CONTROL table now
     # SYNC_LAST_UPDATE = Column(String(20), nullable=True)
 
-class PAC010(Base):
-    __tablename__ = "PAC010"
-    
-    # We need a PK for local storage, Protheus tables usually have R_E_C_N_O_
-    # Disable autoincrement to allow inserting explicit values from remote
-    R_E_C_N_O_ = Column(Integer, primary_key=True, autoincrement=False)
-    D_E_L_E_T_ = Column(String(1))
-    
-    PAC_FILIAL = Column(String(2))
-    PAC_CUSTO = Column(String(50), index=True)
-    PAC_DATA = Column(String(8))
-    PAC_VALOR = Column(Float)
-    PAC_HISTOR = Column(String(200))
-    PAC_TIPO = Column(String(10))
-    PAC_CLIFOR = Column(String(6))
-    PAC_DEBCRD = Column(String(1))
-    PAC_DOCUME = Column(String(9))
-    PAC_FILORI = Column(String(2))
-    PAC_LOJA = Column(String(2))
-    PAC_ORIGEM = Column(String(10))
-    PAC_PARCEL = Column(String(2))
-    PAC_RECPAG = Column(String(1))
-    PAC_RUBRIC = Column(String(3))
-    PAC_SEQ = Column(String(2))
-    PAC_SEQMOV = Column(String(6))
-    PAC_SEQUEN = Column(String(3))
-    PAC_SERIE = Column(String(3))
-    PAC_STATUS = Column(String(1))
-    PAC_SUBRUB = Column(String(3))
-    PAC_USERGA = Column(String(17))
-    PAC_USERGI = Column(String(17))
-    PAC_VALDES = Column(Float)
-    PAC_VLJURO = Column(Float)
-    PAC_VLMULT = Column(Float)
-    
 class PAD010(Base):
     __tablename__ = "PAD010"
     
@@ -93,5 +58,22 @@ class SC6010(Base):
     C6_PRCVEN = Column(Float)  # Valor da Parcela
     C6_ITEM = Column(String(10))  # Número Parcela
     C6_SERIE = Column(String(3))  # Série (condicional - se vazio, não somar)
-    C8_NOTA = Column(String(9))  # Nota (condicional - se vazio, não somar)
+    C6_NOTA = Column(String(9))  # Nota (condicional - se vazio, não somar)
+    C6_DATFAT = Column(String(8))  # Data de Faturamento (formato YYYYMMDD)
+    C6_DESCRI = Column(String(200))  # Descrição da Parcela
+
+class SE2010(Base):
+    __tablename__ = "SE2010"
+    
+    R_E_C_N_O_ = Column(Integer, primary_key=True, autoincrement=False)
+    D_E_L_E_T_ = Column(String(1))
+    
+    E2_FILIAL = Column(String(2))
+    E2_CUSTO = Column(String(50), index=True)  # ID Projeto
+    E2_VALOR = Column(Float)  # Valor do Realizado
+    E2_RUBRIC = Column(String(3))  # Conexão mãe-filho (equivalente a PAC_RUBRIC)
+    E2_SUBRUB = Column(String(3))  # Conexão filho-filho (equivalente a PAC_SUBRUB)
+    E2_EMISSAO = Column(String(8))  # Data de Emissão (formato YYYYMMDD)
+    E2_BAIXA = Column(String(8))  # Data de Baixa (formato YYYYMMDD)
+    E2_NOMEFOR = Column(String(200))  # Nome do Fornecedor/Histórico (para filhos dos filhos)
 

@@ -30,7 +30,7 @@ def testar_backend_direto():
     print("\n2️⃣ Testando lógica do endpoint de projetos...")
     try:
         from app.db.session import SessionLocal
-        from app.models.protheus import CTT010, PAC010, PAD010
+        from app.models.protheus import CTT010, PAD010
         from sqlalchemy import func
         from app.api.v1.endpoints.projects import read_projects
         from app.api import deps
@@ -47,18 +47,6 @@ def testar_backend_direto():
         total = query.count()
         print(f"   ✅ Count OK - {total} projetos totais")
         
-        # Testar query otimizada de orçamento
-        custos_list = [p.CTT_CUSTO for p in projects]
-        if custos_list:
-            realized_dict = {}
-            realized_results = db.query(
-                PAC010.PAC_CUSTO,
-                func.sum(PAC010.PAC_VALOR).label('realized')
-            ).filter(PAC010.PAC_CUSTO.in_(custos_list))\
-             .group_by(PAC010.PAC_CUSTO).all()
-            realized_dict = {row.PAC_CUSTO: float(row.realized or 0.0) for row in realized_results}
-            print(f"   ✅ Query de realizado OK - {len(realized_dict)} resultados")
-        
         db.close()
     except Exception as e:
         print(f"   ❌ Erro no endpoint de projetos: {e}")
@@ -69,7 +57,7 @@ def testar_backend_direto():
     print("\n3️⃣ Testando lógica do endpoint do dashboard...")
     try:
         from app.db.session import SessionLocal
-        from app.models.protheus import CTT010, PAC010, PAD010
+        from app.models.protheus import CTT010, PAD010
         from sqlalchemy import func
         
         db = SessionLocal()
@@ -138,6 +126,10 @@ if __name__ == "__main__":
         print(f"\n❌ Erro durante diagnóstico: {e}")
         traceback.print_exc()
         sys.exit(1)
+
+
+
+
 
 
 

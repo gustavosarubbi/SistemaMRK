@@ -11,7 +11,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from app.core.config import settings
 from app.db.session import engine_local, engine_remote, SessionLocal
-from app.models.protheus import CTT010, PAC010, PAD010
+from app.models.protheus import CTT010, PAD010
 
 def verificar_configuracao():
     print("=" * 70)
@@ -44,7 +44,7 @@ def verificar_configuracao():
     
     # 3. Verificar tabelas locais
     print("\n📊 VERIFICANDO TABELAS LOCAIS:")
-    tabelas_esperadas = ["CTT010", "PAC010", "PAD010"]
+    tabelas_esperadas = ["CTT010", "PAD010"]
     inspector = inspect(engine_local)
     tabelas_existentes = inspector.get_table_names()
     
@@ -78,9 +78,6 @@ def verificar_configuracao():
         print("\n📋 TESTANDO QUERIES COM OS MODELOS:")
         count_ctt = db.query(CTT010).count()
         print(f"   ✅ CTT010 (via modelo): {count_ctt} registros")
-        
-        count_pac = db.query(PAC010).count()
-        print(f"   ✅ PAC010 (via modelo): {count_pac} registros")
         
         count_pad = db.query(PAD010).count()
         print(f"   ✅ PAD010 (via modelo): {count_pad} registros")
@@ -121,6 +118,10 @@ if __name__ == "__main__":
         import traceback
         traceback.print_exc()
         sys.exit(1)
+
+
+
+
 
 
 

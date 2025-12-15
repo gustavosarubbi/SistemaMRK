@@ -11,7 +11,10 @@ import { Project } from "@/types"
 import { formatCurrency } from "@/lib/utils"
 import { ArrowRight, Calendar, User } from "lucide-react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
+import { useQuery } from '@tanstack/react-query'
+import api from '@/lib/api'
 
 interface ProjectCardProps {
     project: Project
@@ -28,7 +31,7 @@ const formatDate = (dateStr: string): string => {
 }
 
 // Badge de vigência
-const getVigenciaBadge = (dtIni: string, dtFim: string) => {
+const getVigenciaBadge = (dtIni: string, dtFim: string, isFinalized?: boolean) => {
     if (!dtIni || !dtFim || dtIni.length !== 8 || dtFim.length !== 8) return null
     
     const today = new Date()
@@ -45,10 +48,21 @@ const getVigenciaBadge = (dtIni: string, dtFim: string) => {
     } else if (today > end && today <= endPlus60) {
         return <Badge variant="warning" className="text-[10px]">Prestar Contas</Badge>
     } else if (today > endPlus60) {
-        return <Badge variant="secondary" className="text-[10px]">Finalizado</Badge>
+        return <Badge variant="secondary" className="text-[10px]">
+            {isFinalized ? 'Finalizado' : 'Pendente'}
+        </Badge>
     } else {
         return <Badge variant="outline" className="text-[10px]">Não Iniciado</Badge>
     }
+}
+
+interface BillingResponse {
+    total_billing: number;
+    billed: number;
+    pending: number;
+    total_provisions: number;
+    count: number;
+    billing_records: any[];
 }
 
 export function ProjectCard({
@@ -58,24 +72,65 @@ export function ProjectCard({
     style,
     className,
 }: ProjectCardProps) {
+    const router = useRouter()
     const usagePercent = project.usage_percent || 0
-    const balance = (project.budget || 0) - (project.realized || 0)
+    const balance = (project.budget || 0) - (project.realized || 0) // Orçamento - Realizado
+
+    // Buscar dados de billing para calcular Saldo Financeiro
+    const { data: billingData } = useQuery<BillingResponse>({
+        queryKey: ['project_billing', project.CTT_CUSTO],
+        queryFn: async () => {
+            const res = await api.get(`/projects/${project.CTT_CUSTO}/billing`);
+            return res.data;
+        },
+        staleTime: 60000, // 1 minuto
+        gcTime: 300000, // 5 minutos
+        refetchOnWindowFocus: false,
+    });
+
+    // Calcular Saldo Financeiro: Parcelas Faturadas - Realizado
+    const totalBilling = billingData?.total_billing || 0;
+    const realized = project.realized || 0;
+    const financialBalance = totalBilling > 0 
+        ? totalBilling - realized
+        : 0;
+
+    const handleCardClick = (e: React.MouseEvent) => {
+        // Não navegar se o clique foi no checkbox ou no botão de detalhes
+        const target = e.target as HTMLElement
+        if (
+            target.closest('input[type="checkbox"]') ||
+            target.closest('button') ||
+            target.closest('a')
+        ) {
+            return
+        }
+        router.push(`/dashboard/projects/${encodeURIComponent(project.CTT_CUSTO)}`)
+    }
 
     return (
         <Card 
             className={cn(
-                "group relative transition-all duration-200",
+                "group relative transition-all duration-200 cursor-pointer",
                 "hover:shadow-lg hover:border-primary/30",
                 isSelected && "ring-2 ring-primary border-primary",
                 className
             )}
             style={style}
+            onClick={handleCardClick}
         >
             {/* Checkbox de seleção */}
-            <div className="absolute top-3 right-3 z-10">
+            <div 
+                className="absolute top-3 right-3 z-10"
+                onClick={(e) => e.stopPropagation()}
+            >
                 <Checkbox
                     checked={isSelected}
-                    onChange={(e) => onSelect(e.target.checked)}
+                    onChange={(e) => {
+                        e.stopPropagation();
+                        onSelect(e.target.checked);
+                    }}
+                    onClick={(e) => e.stopPropagation()}
                     aria-label={`Selecionar ${project.CTT_DESC01}`}
                 />
             </div>
@@ -85,7 +140,7 @@ export function ProjectCard({
                     <Badge variant="outline" className="text-xs shrink-0">
                         {project.CTT_CUSTO}
                     </Badge>
-                    {getVigenciaBadge(project.CTT_DTINI, project.CTT_DTFIM)}
+                    {getVigenciaBadge(project.CTT_DTINI, project.CTT_DTFIM, project.is_finalized)}
                 </div>
                 <div className="flex items-start gap-1.5 mt-2">
                     <h3 className="font-semibold text-sm line-clamp-2 flex-1">
@@ -125,15 +180,28 @@ export function ProjectCard({
                     </div>
                 </div>
 
-                {/* Saldo */}
-                <div className="text-xs">
-                    <span className="text-muted-foreground">Saldo</span>
-                    <p className={cn(
-                        "font-semibold",
-                        balance < 0 && "text-destructive"
-                    )}>
-                        {formatCurrency(balance)}
-                    </p>
+                {/* Saldos */}
+                <div className="space-y-2 text-xs">
+                    {/* Saldo Orçamentário */}
+                    <div>
+                        <span className="text-muted-foreground">Saldo Orçamentário</span>
+                        <p className={cn(
+                            "font-semibold",
+                            balance < 0 && "text-destructive"
+                        )}>
+                            {formatCurrency(balance)}
+                        </p>
+                    </div>
+                    {/* Saldo Financeiro */}
+                    <div>
+                        <span className="text-muted-foreground">Saldo Financeiro</span>
+                        <p className={cn(
+                            "font-semibold",
+                            financialBalance < 0 && "text-destructive"
+                        )}>
+                            {formatCurrency(financialBalance)}
+                        </p>
+                    </div>
                 </div>
 
                 {/* Barra de progresso */}
@@ -146,7 +214,7 @@ export function ProjectCard({
                 </div>
 
                 {/* Botão de detalhes */}
-                <Link href={`/dashboard/projects/${project.CTT_CUSTO}`} className="block">
+                <Link href={`/dashboard/projects/${encodeURIComponent(project.CTT_CUSTO)}`} className="block">
                     <Button 
                         variant="outline" 
                         size="sm" 
@@ -160,5 +228,7 @@ export function ProjectCard({
         </Card>
     )
 }
+
+
 
 

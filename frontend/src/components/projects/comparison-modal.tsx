@@ -118,9 +118,9 @@ export function ComparisonModal({
                                     <p className="text-xs text-muted-foreground">Saldo</p>
                                     <p className={cn(
                                         "text-sm font-semibold",
-                                        ((project.budget || 0) - (project.realized || 0)) < 0 && "text-destructive"
+                                        ((project.realized || 0) - (project.budget || 0)) < 0 && "text-destructive"
                                     )}>
-                                        {formatCurrency((project.budget || 0) - (project.realized || 0))}
+                                        {formatCurrency((project.realized || 0) - (project.budget || 0))}
                                     </p>
                                 </div>
 
@@ -174,9 +174,9 @@ export function ComparisonModal({
                                     {projects.map((p) => (
                                         <td key={p.CTT_CUSTO} className={cn(
                                             "text-right py-2",
-                                            ((p.budget || 0) - (p.realized || 0)) < 0 && "text-destructive"
+                                            ((p.realized || 0) - (p.budget || 0)) < 0 && "text-destructive"
                                         )}>
-                                            {formatCurrency((p.budget || 0) - (p.realized || 0))}
+                                            {formatCurrency((p.realized || 0) - (p.budget || 0))}
                                         </td>
                                     ))}
                                 </tr>
@@ -206,5 +206,7 @@ export function ComparisonModal({
         </Dialog>
     )
 }
+
+
 
 

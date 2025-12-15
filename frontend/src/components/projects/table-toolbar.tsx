@@ -20,6 +20,7 @@ import {
     FileText,
     File,
     GitCompare,
+    X,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { ViewMode } from "@/types"
@@ -34,6 +35,8 @@ interface TableToolbarProps {
     onColumnVisibilityChange: (columnId: string, visible: boolean) => void
     onExport: (format: 'csv' | 'excel' | 'pdf', selectedOnly: boolean) => void
     onCompare: () => void
+    onClearFilters?: () => void
+    hasActiveFilters?: boolean
     className?: string
 }
 
@@ -68,6 +71,8 @@ export function TableToolbar({
     onColumnVisibilityChange,
     onExport,
     onCompare,
+    onClearFilters,
+    hasActiveFilters,
     className,
 }: TableToolbarProps) {
     return (
@@ -100,6 +105,19 @@ export function TableToolbar({
 
             {/* Lado direito - Controles */}
             <div className="flex items-center gap-2">
+                {/* Botão Limpar Filtros */}
+                {hasActiveFilters && onClearFilters && (
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={onClearFilters}
+                        className="h-8 gap-1.5"
+                    >
+                        <X className="h-3.5 w-3.5" />
+                        <span className="hidden sm:inline">Limpar Filtros</span>
+                    </Button>
+                )}
+                
                 {/* Seletor de colunas */}
                 <DropdownMenu>
                     <DropdownMenuTrigger asChild>

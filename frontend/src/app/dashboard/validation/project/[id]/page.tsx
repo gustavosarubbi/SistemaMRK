@@ -37,7 +37,7 @@ import { formatCurrency } from '@/lib/utils';
 import { EditModal } from '@/components/validation/edit-modal';
 import { RejectModal } from '@/components/validation/reject-modal';
 import { PageHeader } from '@/components/layout/page-header';
-import { getProjectClassification, getServiceType } from '@/lib/project-mappings';
+import { getProjectClassification, getServiceType, getProjectAnalyst } from '@/lib/project-mappings';
 
 export default function ProjectValidationPage() {
   const params = useParams();
@@ -177,14 +177,12 @@ export default function ProjectValidationPage() {
   }
 
   const project = data.project;
-  const movements = data.movements || [];
   const budgets = data.budgets || [];
   const summary = data.summary || {};
 
   const projectStatus = project.validation_status?.status || 'PENDING';
-  const pendingMovements = movements.filter((m: any) => m.validation_status?.status === 'PENDING').length;
   const pendingBudgets = budgets.filter((b: any) => b.validation_status?.status === 'PENDING').length;
-  const canApproveAll = projectStatus === 'PENDING' && (pendingMovements > 0 || pendingBudgets > 0);
+  const canApproveAll = projectStatus === 'PENDING' && pendingBudgets > 0;
 
   return (
     <div className="space-y-8">
@@ -294,7 +292,7 @@ export default function ProjectValidationPage() {
                 <User className="h-4 w-4" />
                 Analista
               </div>
-              <div className="font-semibold">{project.CTT_ANADES || project.CTT_ANALIS || '-'}</div>
+              <div className="font-semibold">{getProjectAnalyst(project)}</div>
             </div>
             <div className="space-y-1">
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -328,18 +326,7 @@ export default function ProjectValidationPage() {
       </Card>
 
       {/* Summary Cards */}
-      <div className="grid gap-4 md:grid-cols-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Total Movimentações</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(summary.total_movements || 0)}</div>
-            <div className="text-xs text-muted-foreground mt-1">
-              {summary.movements_count || 0} registros
-            </div>
-          </CardContent>
-        </Card>
+      <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium">Total Orçado</CardTitle>
@@ -365,104 +352,14 @@ export default function ProjectValidationPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-orange-600">
-              {pendingMovements + pendingBudgets}
+              {pendingBudgets}
             </div>
             <div className="text-xs text-muted-foreground mt-1">
-              {pendingMovements} mov. + {pendingBudgets} orç.
+              {pendingBudgets} orç. pendentes
             </div>
           </CardContent>
         </Card>
       </div>
-
-      {/* Movements Table */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Movimentações (PAC010)</CardTitle>
-          <CardDescription>
-            {movements.length} movimentações relacionadas a este projeto
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>ID</TableHead>
-                  <TableHead>Data</TableHead>
-                  <TableHead>Valor</TableHead>
-                  <TableHead>Histórico</TableHead>
-                  <TableHead>Tipo</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Ações</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {movements.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                      Nenhuma movimentação encontrada
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  movements.map((mov: any) => {
-                    const movId = String(mov.R_E_C_N_O_);
-                    const movStatus = mov.validation_status?.status || 'PENDING';
-                    const isPending = movStatus === 'PENDING';
-
-                    return (
-                      <TableRow key={movId}>
-                        <TableCell className="font-semibold text-xs">{movId}</TableCell>
-                        <TableCell className="text-xs">{formatDate(mov.PAC_DATA)}</TableCell>
-                        <TableCell className="text-xs font-semibold">
-                          {formatCurrency(mov.PAC_VALOR || 0)}
-                        </TableCell>
-                        <TableCell className="text-xs">{mov.PAC_HISTOR || '-'}</TableCell>
-                        <TableCell className="text-xs">{mov.PAC_TIPO || '-'}</TableCell>
-                        <TableCell>{getStatusBadge(movStatus)}</TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            {isPending && (
-                              <>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-7 w-7"
-                                  onClick={() => handleEdit(mov, 'PAC010')}
-                                  title="Editar"
-                                >
-                                  <Edit className="h-3.5 w-3.5" />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-7 w-7 text-green-600 hover:text-green-700 hover:bg-green-50"
-                                  onClick={() => handleApprove(movId, 'PAC010')}
-                                  title="Aprovar"
-                                >
-                                  <CheckCircle2 className="h-3.5 w-3.5" />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-7 w-7 text-red-600 hover:text-red-700 hover:bg-red-50"
-                                  onClick={() => handleReject(movId, 'PAC010')}
-                                  title="Rejeitar"
-                                >
-                                  <XCircle className="h-3.5 w-3.5" />
-                                </Button>
-                              </>
-                            )}
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
 
       {/* Budgets Table */}
       <Card>

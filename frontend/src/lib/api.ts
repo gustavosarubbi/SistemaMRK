@@ -37,9 +37,21 @@ api.interceptors.request.use(
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+    
+    // Log para debug (apenas em desenvolvimento)
+    if (process.env.NODE_ENV === 'development') {
+      console.log('API Request:', {
+        method: config.method,
+        url: config.url,
+        baseURL: config.baseURL,
+        fullURL: `${config.baseURL}${config.url}`,
+      });
+    }
+    
     return config;
   },
   (error) => {
+    console.error('Request interceptor error:', error);
     return Promise.reject(error);
   }
 );
@@ -48,7 +60,30 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response && error.response.status === 401) {
+    // Log para debug (apenas em desenvolvimento)
+    if (process.env.NODE_ENV === 'development') {
+      if (error.response) {
+        console.error('API Response Error:', {
+          status: error.response.status,
+          statusText: error.response.statusText,
+          data: error.response.data,
+          url: error.config?.url,
+          baseURL: error.config?.baseURL,
+        });
+      } else if (error.request) {
+        console.error('API Network Error:', {
+          message: error.message,
+          url: error.config?.url,
+          baseURL: error.config?.baseURL,
+          fullURL: error.config ? `${error.config.baseURL}${error.config.url}` : 'unknown',
+        });
+      } else {
+        console.error('API Error:', error.message);
+      }
+    }
+    
+    if (error.response && (error.response.status === 401 || error.response.status === 403)) {
+      // Token inválido ou expirado - fazer logout e redirecionar
       useAuthStore.getState().logout();
       if (typeof window !== 'undefined') {
           window.location.href = '/login';

@@ -174,7 +174,7 @@ export function ProjectsSidebar({ sidebar, startDate, endDate }: ProjectsSidebar
                                             isUrgent && !isCritical && "border-orange-200 bg-orange-50/50"
                                         )}
                                         onClick={() => {
-                                            router.push(`/dashboard/projects/${project.id}`);
+                                            router.push(`/dashboard/projects/${encodeURIComponent(project.id)}`);
                                             closeSidebar();
                                         }}
                                     >

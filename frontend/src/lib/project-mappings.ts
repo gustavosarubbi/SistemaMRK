@@ -29,5 +29,19 @@ export const getServiceType = (code?: string) => {
   return SERVICE_TYPE_MAP[code] || code;
 };
 
+/**
+ * Obtém o nome do analista do projeto
+ * Verifica primeiro CTT_ANADES, depois CTT_ANALIS
+ */
+export const getProjectAnalyst = (project?: { CTT_ANADES?: string; CTT_ANALIS?: string } | null): string => {
+  if (!project) return '-';
+  const analyst = (project.CTT_ANADES || project.CTT_ANALIS || '').trim();
+  return analyst || '-';
+};
+
+
+
+
+
 
 

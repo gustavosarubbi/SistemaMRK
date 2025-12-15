@@ -2,7 +2,9 @@ export interface KPI {
     total_projects: number;
     total_budget: number;
     total_realized: number;
+    total_billing?: number;
     balance: number;
+    financial_balance?: number;
     in_execution?: number;
     ending_soon?: number;
 }
@@ -52,7 +54,7 @@ export interface DashboardData {
         in_execution: number;
         ending_soon: number;
         rendering_accounts: number;
-        finished: number;
+        rendering_accounts_60days: number;
         not_started: number;
     };
     projects_in_execution?: ProjectListItem[];
@@ -91,14 +93,18 @@ export interface Project {
     realized?: number;
     usage_percent?: number;
     initial_balance?: number;
+    is_finalized?: boolean;
+    finalized_at?: string;
+    finalized_by?: string;
 }
 
 export interface ProjectStats {
     total: number;
     in_execution: number;
     rendering_accounts: number;
-    finished: number;
+    rendering_accounts_60days: number;
     not_started: number;
+    finalized: number;
 }
 
 export interface PaginatedResponse<T> {
@@ -172,6 +178,8 @@ export interface AdvancedProjectFilters extends ProjectFilters {
     activePreset?: FilterPreset;
     classification?: string;
     serviceType?: string;
+    analyst?: string;
+    showFinalized?: boolean;
 }
 
 // Contadores de filtros
@@ -179,8 +187,8 @@ export interface FilterCounts {
     byStatus: {
         inExecution: number;
         renderingAccounts: number;
-        finished: number;
         notStarted: number;
+        finalized: number;
     };
     byDaysRemaining: {
         overdue: number;
@@ -199,6 +207,7 @@ export interface FilterCounts {
     byClient: Record<string, number>;
     byClassification: Record<string, number>;
     byServiceType: Record<string, number>;
+    byAnalyst: Record<string, number>;
 }
 
 export interface SavedFilter {

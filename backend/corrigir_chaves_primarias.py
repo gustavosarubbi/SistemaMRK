@@ -18,7 +18,6 @@ def corrigir_chaves_primarias():
     # Mapeamento de tabelas e suas chaves primárias
     pk_map = {
         "CTT010": ["CTT_CUSTO"],
-        "PAC010": ["R_E_C_N_O_"],
         "PAD010": ["R_E_C_N_O_"]
     }
     

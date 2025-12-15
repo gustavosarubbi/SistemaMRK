@@ -50,7 +50,7 @@ const getDaysRemaining = (dtFim: string): number | null => {
 export function QuickStatsPopover({ project, children }: QuickStatsPopoverProps) {
     const budget = project.budget || 0
     const realized = project.realized || 0
-    const balance = budget - realized
+    const balance = budget - realized // Orçamento - Realizado
     const usagePercent = project.usage_percent || 0
     const daysRemaining = getDaysRemaining(project.CTT_DTFIM)
 
@@ -120,7 +120,7 @@ export function QuickStatsPopover({ project, children }: QuickStatsPopoverProps)
                     {/* Saldo */}
                     <div className="p-3 rounded-lg bg-muted/50">
                         <div className="flex items-center justify-between">
-                            <span className="text-xs text-muted-foreground">Saldo disponível</span>
+                            <span className="text-xs text-muted-foreground">Saldo Orçamentário</span>
                             <span className={cn(
                                 "font-bold text-sm",
                                 balance < 0 ? "text-destructive" : "text-green-600"
@@ -170,7 +170,7 @@ export function QuickStatsPopover({ project, children }: QuickStatsPopoverProps)
 
                 {/* Footer */}
                 <div className="p-3 border-t bg-muted/30">
-                    <Link href={`/dashboard/projects/${project.CTT_CUSTO}`}>
+                    <Link href={`/dashboard/projects/${encodeURIComponent(project.CTT_CUSTO)}`}>
                         <Button variant="ghost" size="sm" className="w-full justify-between">
                             Ver detalhes completos
                             <ArrowRight className="h-3.5 w-3.5" />
@@ -181,5 +181,7 @@ export function QuickStatsPopover({ project, children }: QuickStatsPopoverProps)
         </Popover>
     )
 }
+
+
 
 

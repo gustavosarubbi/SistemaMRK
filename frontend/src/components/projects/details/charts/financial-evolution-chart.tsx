@@ -93,3 +93,7 @@ export function FinancialEvolutionChart({ data, budget }: FinancialEvolutionChar
 }
 
 
+
+
+
+

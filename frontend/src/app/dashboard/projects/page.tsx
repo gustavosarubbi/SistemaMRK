@@ -3,15 +3,16 @@
 import * as React from 'react';
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import api from '@/lib/api';
 import { PageHeader } from '@/components/layout/page-header';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { DataTable } from '@/components/ui/data-table';
 import { Pagination } from '@/components/ui/pagination';
 import { Project, PaginatedResponse, AdvancedProjectFilters, SavedFilter, ViewMode, FilterPreset } from '@/types';
-import { AlertCircle, FileText, Filter, PanelLeftClose, PanelLeft } from 'lucide-react';
+import { AlertCircle, FileText, Filter, PanelLeftClose, PanelLeft, X, Search } from 'lucide-react';
 
 // Project components
 import { ProjectStatsCards } from '@/components/dashboard/project-stats-cards';
@@ -22,8 +23,6 @@ import { ProjectsGrid } from '@/components/projects/projects-grid';
 import { BulkActionsBar } from '@/components/projects/bulk-actions-bar';
 import { ComparisonModal } from '@/components/projects/comparison-modal';
 import { SaveFilterModal } from '@/components/projects/save-filter-modal';
-import { UrgencyCards } from '@/components/projects/urgency-cards';
-import { QuickFilterChips } from '@/components/projects/quick-filter-chips';
 
 // Store and utilities
 import { useProjectPreferencesStore } from '@/store/projectPreferencesStore';
@@ -45,6 +44,7 @@ import { cn } from '@/lib/utils';
 
 export default function ProjectsPage() {
     const searchParams = useSearchParams();
+    const router = useRouter();
     
     // Preferences from store
     const {
@@ -79,6 +79,8 @@ export default function ProjectsPage() {
             executionRange: 'all',
             classification: '',
             serviceType: '',
+            analyst: '',
+            showFinalized: false,
         };
     }, [searchParams]);
 
@@ -120,22 +122,27 @@ export default function ProjectsPage() {
         setPage(1);
     }, 300);
     
-    // Fetch filter options (Coordinators and Clients)
+    // Fetch filter options (Coordinators and Clients) - com cache longo
     const { data: filterOptions } = useQuery({
         queryKey: ['project-options'],
         queryFn: async () => {
             const res = await api.get('/projects/options');
             return res.data;
         },
+        staleTime: 300000, // 5 minutos - opções mudam raramente
+        gcTime: 600000, // 10 minutos
         refetchOnWindowFocus: false,
+        refetchOnMount: false,
     });
 
-    const coordinators = filterOptions?.coordinators || [];
-    const clients = filterOptions?.units || [];
+    // Normalizar coordenadores e clientes removendo espaços extras
+    const coordinators = (filterOptions?.coordinators || []).map((c: string) => c?.trim() || '').filter((c: string) => c);
+    const clients = (filterOptions?.units || []).map((c: string) => c?.trim() || '').filter((c: string) => c);
+    const analysts = (filterOptions?.analysts || []).map((a: string) => a?.trim() || '').filter((a: string) => a);
 
-    // Fetch projects
+    // Fetch projects - com cache otimizado
     const { data, isLoading, error, refetch } = useQuery<PaginatedResponse<Project>>({
-        queryKey: ['projects', debouncedSearch, page, filters.startDate, filters.endDate, filters.coordinator, filters.client, filters.status, itemsPerPage],
+        queryKey: ['projects', debouncedSearch, page, filters.startDate, filters.endDate, filters.coordinator, filters.client, filters.status, filters.analyst, filters.showFinalized, itemsPerPage],
         queryFn: async () => {
             const params = new URLSearchParams();
             if (debouncedSearch) params.append('search', debouncedSearch);
@@ -144,6 +151,8 @@ export default function ProjectsPage() {
             if (filters.coordinator) params.append('coordinator', filters.coordinator);
             if (filters.client) params.append('client', filters.client);
             if (filters.status && filters.status !== 'not_started') params.append('status', filters.status);
+            if (filters.analyst) params.append('analyst', filters.analyst);
+            if (filters.showFinalized !== undefined) params.append('show_finalized', filters.showFinalized.toString());
             
             params.append('page', page.toString());
             params.append('limit', itemsPerPage.toString());
@@ -152,39 +161,73 @@ export default function ProjectsPage() {
             return res.data;
         },
         placeholderData: (previousData) => previousData,
+        staleTime: 60000, // 1 minuto - dados considerados frescos
+        gcTime: 300000, // 5 minutos
         retry: 1,
         refetchOnWindowFocus: false,
+        refetchOnMount: false, // Não refaz requisição se já tem dados em cache
     });
 
     const allProjects = data?.data || [];
     
-    // Query separada para obter TODOS os projetos (sem paginação) para contadores de urgência
-    // Usa status=all para pegar TODOS os projetos, não apenas os ativos
+    // Fetch all projects for counts calculation (only with date filters)
+    // This ensures counts show all available coordinators/clients/classifications/types
+    // in the selected time period, regardless of other active filters
     const { data: allProjectsForCounts } = useQuery<PaginatedResponse<Project>>({
-        queryKey: ['projects-counts', debouncedSearch, filters.startDate, filters.endDate, filters.coordinator, filters.client],
+        queryKey: ['projects-for-counts', filters.startDate, filters.endDate],
         queryFn: async () => {
             const params = new URLSearchParams();
-            if (debouncedSearch) params.append('search', debouncedSearch);
+            // Aplicar apenas filtros de data para limitar o período
             if (filters.startDate) params.append('start_date', filters.startDate);
             if (filters.endDate) params.append('end_date', filters.endDate);
-            if (filters.coordinator) params.append('coordinator', filters.coordinator);
-            if (filters.client) params.append('client', filters.client);
-            // Usar status=all para pegar TODOS os projetos (incluindo finalizados) para contadores
-            params.append('status', 'all');
-            // Não aplicar paginação - pegar todos
-            params.append('page', '1');
-            params.append('limit', '10000'); // Limite alto para pegar todos
+            // Não aplicar outros filtros (search, status, coordinator, client, etc)
+            // para que os counts mostrem todas as opções disponíveis no período
             
-            const res = await api.get(`/projects?${params.toString()}`);
-            return res.data;
+            // Buscar todos os projetos fazendo múltiplas requisições se necessário
+            const allProjects: Project[] = [];
+            let currentPage = 1;
+            const limit = 1000; // Limite por página
+            let hasMore = true;
+            
+            while (hasMore) {
+                const pageParams = new URLSearchParams(params);
+                pageParams.append('page', currentPage.toString());
+                pageParams.append('limit', limit.toString());
+                
+                const res = await api.get(`/projects?${pageParams.toString()}`);
+                const pageData = res.data;
+                
+                if (pageData.data && pageData.data.length > 0) {
+                    allProjects.push(...pageData.data);
+                    
+                    // Verificar se há mais páginas
+                    const totalPages = pageData.total_pages || 1;
+                    if (currentPage >= totalPages || pageData.data.length < limit) {
+                        hasMore = false;
+                    } else {
+                        currentPage++;
+                    }
+                } else {
+                    hasMore = false;
+                }
+            }
+            
+            return {
+                data: allProjects,
+                total: allProjects.length,
+                page: 1,
+                limit: allProjects.length,
+                total_pages: 1,
+            };
         },
-        placeholderData: (previousData) => previousData,
+        staleTime: 60000, // 1 minuto
+        gcTime: 300000, // 5 minutos
         retry: 1,
         refetchOnWindowFocus: false,
+        refetchOnMount: false,
     });
-    
-    // Projetos para contadores (todos, sem paginação, incluindo finalizados)
-    const projectsForCounts = allProjectsForCounts?.data || [];
+
+    const allProjectsForCountsData = allProjectsForCounts?.data || [];
     
     // Apply client-side filters
     const filteredProjects = useMemo(() => {
@@ -298,16 +341,21 @@ export default function ProjectsPage() {
     const totalPages = data?.total_pages || 1;
     const totalItems = data?.total || 0;
 
-    // Calculate counts usando TODOS os projetos (sem paginação)
-    const filterCounts = useFilterCounts(projectsForCounts);
-    const urgencyCountsRaw = useUrgencyCounts(projectsForCounts);
+    // Calcular counts com todos os projetos (sem filtros de coordenador, cliente, classificação, tipo)
+    // Isso garante que os counts sejam precisos mesmo quando há filtros ativos
+    const filterCounts = useFilterCounts(allProjectsForCountsData);
     
-    // Usar stats do backend para garantir consistência com os cards de baixo
-    // Mas manter os contadores de urgência específicos do frontend
+    // Calcular contadores de urgência apenas com projetos da página atual
+    // Para contadores globais, usar stats do backend
+    const urgencyCountsRaw = useUrgencyCounts(allProjects);
+    
+    // Usar stats do backend para contadores globais (mais preciso e eficiente)
     const urgencyCounts = {
-        ...urgencyCountsRaw,
-        // Usar stats do backend para renderingAccounts para garantir consistência
-        renderingAccounts: data?.stats?.rendering_accounts || urgencyCountsRaw.renderingAccounts,
+        critical: urgencyCountsRaw.critical, // Calculado localmente apenas para projetos visíveis
+        urgentWeek: urgencyCountsRaw.urgentWeek,
+        renderingAccounts: data?.stats?.rendering_accounts || 0, // Do backend
+        renderingUrgent: urgencyCountsRaw.renderingUrgent, // Calculado localmente
+        vencendoHoje: urgencyCountsRaw.vencendoHoje,
     };
 
     // Memoized columns based on view mode
@@ -354,6 +402,8 @@ export default function ProjectsPage() {
             executionRange: 'all',
             classification: '',
             serviceType: '',
+            analyst: '',
+            showFinalized: false,
         });
         setDebouncedSearch('');
         setActiveUrgencyFilter(undefined);
@@ -429,6 +479,26 @@ export default function ProjectsPage() {
         setPage(1);
     }, []);
 
+    // Verificar se há filtros ativos
+    const hasActiveFilters = useMemo(() => {
+        return !!(
+            debouncedSearch ||
+            filters.startDate !== '2023-01-01' ||
+            filters.endDate ||
+            filters.coordinator ||
+            filters.client ||
+            filters.status ||
+            filters.showApprovedOnly ||
+            filters.vigenciaDaysRange !== 'all' ||
+            filters.renderingDaysRange !== 'all' ||
+            filters.executionRange !== 'all' ||
+            filters.classification ||
+            filters.serviceType ||
+            activeUrgencyFilter ||
+            activePreset
+        );
+    }, [debouncedSearch, filters, activeUrgencyFilter, activePreset]);
+
     return (
         <div className="space-y-4">
             {/* Header */}
@@ -439,26 +509,6 @@ export default function ProjectsPage() {
                     breadcrumbItems={[{ label: 'Projetos' }]}
                 />
             </div>
-
-            {/* Urgency Cards - Mini Dashboard */}
-            <UrgencyCards
-                counts={urgencyCounts}
-                onCardClick={handleUrgencyCardClick}
-                activeFilter={activeUrgencyFilter}
-            />
-
-            {/* Quick Filter Chips */}
-            <QuickFilterChips
-                activePreset={activePreset}
-                onPresetChange={handlePresetChange}
-                counts={{
-                    critical: urgencyCounts.critical,
-                    urgentWeek: urgencyCounts.urgentWeek,
-                    renderingAccounts: urgencyCounts.renderingAccounts,
-                    renderingUrgent: urgencyCounts.renderingUrgent,
-                    highExecution: filterCounts.byExecution.high + filterCounts.byExecution.exceeded,
-                }}
-            />
 
             {/* Main Content with Sidebar */}
             <div className="flex gap-4">
@@ -471,6 +521,7 @@ export default function ProjectsPage() {
                         counts={filterCounts}
                         coordinators={coordinators}
                         clients={clients}
+                        analysts={analysts}
                         isOpen={isSidebarOpen}
                         onToggle={() => setIsSidebarOpen(!isSidebarOpen)}
                         projects={allProjects}
@@ -492,11 +543,25 @@ export default function ProjectsPage() {
                     )}
 
                     {/* Stats Cards */}
-                    <ProjectStatsCards 
-                        stats={data?.stats} 
-                        onFilterClick={handleStatusFilterClick}
-                        currentFilter={filters.status}
-                    />
+                    <div className="relative z-10">
+                        <ProjectStatsCards 
+                            stats={data?.stats} 
+                            onFilterClick={handleStatusFilterClick}
+                            currentFilter={filters.status}
+                        />
+                    </div>
+
+                    {/* Search Bar */}
+                    <div className="relative">
+                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                        <Input
+                            type="text"
+                            placeholder="Pesquisar projetos por nome, ID, coordenador, cliente..."
+                            value={filters.search || ''}
+                            onChange={(e) => handleFiltersChange({ search: e.target.value })}
+                            className="pl-10 h-10"
+                        />
+                    </div>
 
                     {/* Toolbar */}
                     <TableToolbar
@@ -508,6 +573,8 @@ export default function ProjectsPage() {
                         onColumnVisibilityChange={handleColumnVisibilityChange}
                         onExport={handleExport}
                         onCompare={() => setIsCompareOpen(true)}
+                        onClearFilters={handleClearFilters}
+                        hasActiveFilters={hasActiveFilters}
                     />
 
                     {/* Content */}
@@ -537,7 +604,7 @@ export default function ProjectsPage() {
                                     data={filteredProjects}
                                     onRowSelectionChange={handleRowSelection}
                                     onRowClick={(project) => {
-                                        window.location.href = `/dashboard/projects/${project.CTT_CUSTO}`
+                                        router.push(`/dashboard/projects/${encodeURIComponent(project.CTT_CUSTO)}`)
                                     }}
                                     columnVisibility={columnVisibility}
                                     isLoading={isLoading}

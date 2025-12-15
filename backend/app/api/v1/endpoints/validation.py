@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text, inspect, func
 from sqlalchemy.inspection import inspect as sqlalchemy_inspect
 from app.api import deps
-from app.models.protheus import CTT010, PAC010, PAD010
+from app.models.protheus import CTT010, PAD010
 from app.db.session import engine_local, SessionLocal
 from app.services.validation_service import validation_service
 from app.schemas.validation import RejectionRequest
@@ -35,7 +35,6 @@ def get_table_model(table_name: str):
     """Get the SQLAlchemy model for a table name."""
     table_map = {
         "CTT010": CTT010,
-        "PAC010": PAC010,
         "PAD010": PAD010
     }
     return table_map.get(table_name)
@@ -78,16 +77,6 @@ def get_project_for_validation(
         val_status = validation_service.get_validation_status("CTT010", custo)
         project_dict["validation_status"] = val_status
         
-        # Get related movements (PAC010)
-        movements = db.query(PAC010).filter(PAC010.PAC_CUSTO == custo).all()
-        movements_list = []
-        for mov in movements:
-            mov_dict = object_as_dict(mov)
-            mov_id = str(mov.R_E_C_N_O_)
-            mov_val_status = validation_service.get_validation_status("PAC010", mov_id)
-            mov_dict["validation_status"] = mov_val_status
-            movements_list.append(mov_dict)
-        
         # Get related budgets (PAD010)
         budgets = db.query(PAD010).filter(PAD010.PAD_CUSTO == custo).all()
         budgets_list = []
@@ -99,19 +88,15 @@ def get_project_for_validation(
             budgets_list.append(budget_dict)
         
         # Calculate totals
-        total_movements = sum(m.PAC_VALOR or 0 for m in movements)
         total_budget = sum(b.PAD_ORCADO or 0 for b in budgets)
         total_realized = sum(b.PAD_REALIZ or 0 for b in budgets)
         
         return {
             "project": project_dict,
-            "movements": movements_list,
             "budgets": budgets_list,
             "summary": {
-                "total_movements": float(total_movements),
                 "total_budget": float(total_budget),
                 "total_realized": float(total_realized),
-                "movements_count": len(movements_list),
                 "budgets_count": len(budgets_list),
             }
         }
@@ -141,21 +126,6 @@ def approve_project_all(
             raise HTTPException(status_code=500, detail="Erro ao migrar projeto")
         validation_service.update_validation_status("CTT010", custo, "APPROVED", current_user)
         
-        # Get and approve movements
-        movements = db.query(PAC010).filter(PAC010.PAC_CUSTO == custo).all()
-        approved_movements = 0
-        for mov in movements:
-            mov_dict = object_as_dict(mov)
-            mov_id = str(mov.R_E_C_N_O_)
-            mov_status = validation_service.get_validation_status("PAC010", mov_id)
-            
-            # Only approve if not already approved
-            if mov_status.get("status") != "APPROVED":
-                success = validation_service.migrate_to_validated("PAC010", mov_dict)
-                if success:
-                    validation_service.update_validation_status("PAC010", mov_id, "APPROVED", current_user)
-                    approved_movements += 1
-        
         # Get and approve budgets
         budgets = db.query(PAD010).filter(PAD010.PAD_CUSTO == custo).all()
         approved_budgets = 0
@@ -174,7 +144,6 @@ def approve_project_all(
         return {
             "message": "Projeto e registros relacionados aprovados com sucesso",
             "project_id": custo,
-            "approved_movements": approved_movements,
             "approved_budgets": approved_budgets
         }
     except HTTPException:
@@ -193,7 +162,7 @@ def list_pending_records(
     current_user: str = Depends(deps.get_current_user),
 ) -> Any:
     """List records for validation with pagination and filters."""
-    if table not in ["CTT010", "PAC010", "PAD010"]:
+    if table not in ["CTT010", "PAD010"]:
         raise HTTPException(status_code=400, detail="Tabela inválida")
     
     try:
@@ -214,11 +183,6 @@ def list_pending_records(
                     (CTT010.CTT_DESC01.ilike(search_filter)) |
                     (CTT010.CTT_CUSTO.ilike(search_filter)) |
                     (CTT010.CTT_NOMECO.ilike(search_filter))
-                )
-            elif table == "PAC010":
-                query = query.filter(
-                    (PAC010.PAC_CUSTO.ilike(search_filter)) |
-                    (PAC010.PAC_HISTOR.ilike(search_filter))
                 )
             elif table == "PAD010":
                 query = query.filter(
@@ -280,7 +244,7 @@ def get_record(
     current_user: str = Depends(deps.get_current_user),
 ) -> Any:
     """Get a specific record by ID."""
-    if table not in ["CTT010", "PAC010", "PAD010"]:
+    if table not in ["CTT010", "PAD010"]:
         raise HTTPException(status_code=400, detail="Tabela inválida")
     
     try:
@@ -294,7 +258,7 @@ def get_record(
         
         # Handle different primary key types
         try:
-            if table == "PAC010" or table == "PAD010":
+            if table == "PAD010":
                 record_id_int = int(record_id)
                 record = db.query(model).filter(getattr(model, pk_column) == record_id_int).first()
             else:
@@ -324,7 +288,7 @@ def update_record(
     current_user: str = Depends(deps.get_current_user),
 ) -> Any:
     """Update a record's fields."""
-    if table not in ["CTT010", "PAC010", "PAD010"]:
+    if table not in ["CTT010", "PAD010"]:
         raise HTTPException(status_code=400, detail="Tabela inválida")
     
     try:
@@ -337,7 +301,7 @@ def update_record(
         pk_column = get_primary_key_column(table)
         
         try:
-            if table == "PAC010" or table == "PAD010":
+            if table == "PAD010":
                 record_id_int = int(record_id)
                 record = db.query(model).filter(getattr(model, pk_column) == record_id_int).first()
             else:
@@ -366,7 +330,7 @@ def approve_record(
     current_user: str = Depends(deps.get_current_user),
 ) -> Any:
     """Approve a record and migrate it to validated database."""
-    if table not in ["CTT010", "PAC010", "PAD010"]:
+    if table not in ["CTT010", "PAD010"]:
         raise HTTPException(status_code=400, detail="Tabela inválida")
     
     try:
@@ -375,7 +339,7 @@ def approve_record(
         pk_column = get_primary_key_column(table)
         
         try:
-            if table == "PAC010" or table == "PAD010":
+            if table == "PAD010":
                 record_id_int = int(record_id)
                 record = db.query(model).filter(getattr(model, pk_column) == record_id_int).first()
             else:
@@ -421,7 +385,7 @@ def reject_record(
     current_user: str = Depends(deps.get_current_user),
 ) -> Any:
     """Reject a record with a reason."""
-    if table not in ["CTT010", "PAC010", "PAD010"]:
+    if table not in ["CTT010", "PAD010"]:
         raise HTTPException(status_code=400, detail="Tabela inválida")
     
     try:
@@ -430,7 +394,7 @@ def reject_record(
         pk_column = get_primary_key_column(table)
         
         try:
-            if table == "PAC010" or table == "PAD010":
+            if table == "PAD010":
                 record_id_int = int(record_id)
                 record = db.query(model).filter(getattr(model, pk_column) == record_id_int).first()
             else:

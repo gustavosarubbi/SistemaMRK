@@ -87,19 +87,20 @@ export function DashboardFilters({
                         date={startDate}
                         setDate={setStartDate}
                         placeholder="Data inicial"
-                        className="w-full sm:w-[150px]"
+                        className="w-full sm:w-[180px]"
+                        showClearButton={true}
                     />
-                    <span className="text-muted-foreground hidden sm:inline">-</span>
                     <DatePicker
                         date={endDate}
                         setDate={setEndDate}
                         placeholder="Data final"
-                        className="w-full sm:w-[150px]"
+                        className="w-full sm:w-[180px]"
+                        showClearButton={true}
                     />
                 </>
             )}
             
-            {hasActiveFilters && (
+            {hasActiveFilters && currentPreset !== 'custom' && (
                 <Button 
                     variant="ghost" 
                     size="icon" 

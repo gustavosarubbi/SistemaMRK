@@ -14,7 +14,7 @@ import { formatCurrency } from "@/lib/utils"
 import { ArrowRight, Clock, Eye, ExternalLink } from "lucide-react"
 import Link from "next/link"
 import { cn } from "@/lib/utils"
-import { getProjectClassification, getServiceType } from "@/lib/project-mappings"
+import { getProjectClassification, getServiceType, getProjectAnalyst } from "@/lib/project-mappings"
 import { 
     getDaysRemaining, 
     getUrgencyLevel, 
@@ -33,7 +33,7 @@ const formatDate = (dateStr: string): string => {
 }
 
 // Badge de vigência
-const getVigenciaBadge = (dtIni: string, dtFim: string) => {
+const getVigenciaBadge = (dtIni: string, dtFim: string, isFinalized?: boolean) => {
     if (!dtIni || !dtFim || dtIni.length !== 8 || dtFim.length !== 8) return null
     
     const today = new Date()
@@ -50,7 +50,10 @@ const getVigenciaBadge = (dtIni: string, dtFim: string) => {
     } else if (today > end && today <= endPlus60) {
         return <Badge variant="warning" className="text-[10px] h-5 px-1.5 whitespace-nowrap">Prestar Contas</Badge>
     } else if (today > endPlus60) {
-        return <Badge variant="secondary" className="text-[10px] h-5 px-1.5 whitespace-nowrap">Finalizado</Badge>
+        // Se foi validado como finalizado, mostra "Finalizado", senão "Pendente"
+        return <Badge variant="secondary" className="text-[10px] h-5 px-1.5 whitespace-nowrap">
+            {isFinalized ? 'Finalizado' : 'Pendente'}
+        </Badge>
     } else {
         return <Badge variant="outline" className="text-[10px] h-5 px-1.5 whitespace-nowrap">Não Iniciado</Badge>
     }
@@ -74,19 +77,31 @@ export const projectColumns: ColumnDef<Project>[] = [
     {
         id: "select",
         header: ({ table }) => (
-            <Checkbox
-                checked={table.getIsAllPageRowsSelected()}
-                indeterminate={table.getIsSomePageRowsSelected() && !table.getIsAllPageRowsSelected()}
-                onChange={(e) => table.toggleAllPageRowsSelected(e.target.checked)}
-                aria-label="Selecionar todos"
-            />
+            <div onClick={(e) => e.stopPropagation()}>
+                <Checkbox
+                    checked={table.getIsAllPageRowsSelected()}
+                    indeterminate={table.getIsSomePageRowsSelected() && !table.getIsAllPageRowsSelected()}
+                    onChange={(e) => {
+                        e.stopPropagation()
+                        table.toggleAllPageRowsSelected(e.target.checked)
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                    aria-label="Selecionar todos"
+                />
+            </div>
         ),
         cell: ({ row }) => (
-            <Checkbox
-                checked={row.getIsSelected()}
-                onChange={(e) => row.toggleSelected(e.target.checked)}
-                aria-label="Selecionar linha"
-            />
+            <div onClick={(e) => e.stopPropagation()}>
+                <Checkbox
+                    checked={row.getIsSelected()}
+                    onChange={(e) => {
+                        e.stopPropagation()
+                        row.toggleSelected(e.target.checked)
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                    aria-label="Selecionar linha"
+                />
+            </div>
         ),
         enableSorting: false,
         enableHiding: false,
@@ -100,7 +115,7 @@ export const projectColumns: ColumnDef<Project>[] = [
             const project = row.original
             return (
                 <Link 
-                    href={`/dashboard/projects/${project.CTT_CUSTO}`}
+                    href={`/dashboard/projects/${encodeURIComponent(project.CTT_CUSTO)}`}
                     onClick={(e) => e.stopPropagation()}
                 >
                     <Button 
@@ -135,7 +150,7 @@ export const projectColumns: ColumnDef<Project>[] = [
             const project = row.original
             return (
                 <Link 
-                    href={`/dashboard/projects/${project.CTT_CUSTO}`}
+                    href={`/dashboard/projects/${encodeURIComponent(project.CTT_CUSTO)}`}
                     className="block hover:opacity-80 transition-opacity"
                     onClick={(e) => e.stopPropagation()}
                 >
@@ -236,7 +251,7 @@ export const projectColumns: ColumnDef<Project>[] = [
                     {formatDate(project.CTT_DTINI)} <br/> 
                     <span className="text-muted-foreground text-[10px]">até</span> {formatDate(project.CTT_DTFIM)}
                     <div className="mt-1">
-                        {getVigenciaBadge(project.CTT_DTINI, project.CTT_DTFIM)}
+                        {getVigenciaBadge(project.CTT_DTINI, project.CTT_DTFIM, project.is_finalized)}
                     </div>
                 </div>
             )
@@ -361,9 +376,9 @@ export const projectColumns: ColumnDef<Project>[] = [
                     <div className="text-xs font-medium truncate max-w-[140px]" title={project.CTT_NOMECO}>
                         {project.CTT_NOMECO || '-'}
                     </div>
-                    {(project.CTT_ANADES || project.CTT_ANALIS) && (
+                    {getProjectAnalyst(project) !== '-' && (
                         <div className="text-[10px] text-muted-foreground truncate max-w-[140px] mt-0.5">
-                            Analista: {project.CTT_ANADES || project.CTT_ANALIS}
+                            Analista: {getProjectAnalyst(project)}
                         </div>
                     )}
                 </div>

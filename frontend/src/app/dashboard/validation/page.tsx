@@ -39,7 +39,6 @@ import { getProjectClassification, getServiceType } from '@/lib/project-mappings
 
 const TABLES = [
   { value: 'CTT010', label: 'Projetos (CTT010)' },
-  { value: 'PAC010', label: 'Movimentações (PAC010)' },
   { value: 'PAD010', label: 'Orçamentos (PAD010)' },
 ];
 
@@ -57,18 +56,21 @@ export default function ValidationPage() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
-  // Fetch stats
+  // Fetch stats - com cache
   const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ['validation-stats'],
     queryFn: async () => {
       const res = await validationApi.getStats();
       return res.data;
     },
-    retry: 1, // Limita retries para evitar loops infinitos
-    refetchOnWindowFocus: false, // Evita refetch automático ao focar na janela
+    staleTime: 60000, // 1 minuto
+    gcTime: 300000, // 5 minutos
+    retry: 1,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
   });
 
-  // Fetch records
+  // Fetch records - com cache
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['validation-records', activeTable, page, search, statusFilter],
     queryFn: async () => {
@@ -78,8 +80,11 @@ export default function ValidationPage() {
       const res = await validationApi.listRecords(activeTable, params);
       return res.data;
     },
-    retry: 1, // Limita retries para evitar loops infinitos
-    refetchOnWindowFocus: false, // Evita refetch automático ao focar na janela
+    staleTime: 60000, // 1 minuto
+    gcTime: 300000, // 5 minutos
+    retry: 1,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
   });
 
   // Approve mutation
@@ -302,14 +307,6 @@ export default function ValidationPage() {
                           <TableHead>Coordenador</TableHead>
                         </>
                       )}
-                      {activeTable === 'PAC010' && (
-                        <>
-                          <TableHead>Custo</TableHead>
-                          <TableHead>Data</TableHead>
-                          <TableHead>Valor</TableHead>
-                          <TableHead>Histórico</TableHead>
-                        </>
-                      )}
                       {activeTable === 'PAD010' && (
                         <>
                           <TableHead>Custo</TableHead>
@@ -375,22 +372,6 @@ export default function ValidationPage() {
                                 </TableCell>
                                 <TableCell className="text-xs">
                                   {record.CTT_NOMECO || '-'}
-                                </TableCell>
-                              </>
-                            )}
-                            {activeTable === 'PAC010' && (
-                              <>
-                                <TableCell className="text-xs">
-                                  {record.PAC_CUSTO || '-'}
-                                </TableCell>
-                                <TableCell className="text-xs">
-                                  {formatDate(record.PAC_DATA)}
-                                </TableCell>
-                                <TableCell className="text-xs text-right">
-                                  {formatCurrency(record.PAC_VALOR || 0)}
-                                </TableCell>
-                                <TableCell className="text-xs">
-                                  {record.PAC_HISTOR || '-'}
                                 </TableCell>
                               </>
                             )}

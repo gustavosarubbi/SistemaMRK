@@ -1,7 +1,10 @@
 import os
+import logging
 from dotenv import load_dotenv
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 class Settings:
     PROJECT_NAME: str = "SistemaMRK"
@@ -43,6 +46,17 @@ class Settings:
         if not self.DB_SERVER:
             return "sqlite:///./remote_mock.db" # Fallback or mock
         
+        # Validate required credentials - but allow None for optional development
+        if not self.DB_USER or not self.DB_PASSWORD:
+            logger.warning(
+                "DB_USER and/or DB_PASSWORD are not set. "
+                "Remote database connections will fail. Please set these in your .env file."
+            )
+            # Return a connection string that will fail gracefully
+            driver = "ODBC Driver 17 for SQL Server"
+            params = f"DRIVER={{{driver}}};SERVER={self.DB_SERVER},{self.DB_PORT};DATABASE={self.DB_NAME};UID=None;PWD=None"
+            return f"mssql+pyodbc:///?odbc_connect={params}"
+        
         driver = "ODBC Driver 17 for SQL Server"
         params = f"DRIVER={{{driver}}};SERVER={self.DB_SERVER},{self.DB_PORT};DATABASE={self.DB_NAME};UID={self.DB_USER};PWD={self.DB_PASSWORD}"
         
@@ -60,6 +74,20 @@ class Settings:
     def SQLALCHEMY_DATABASE_URI_LOCAL(self) -> str:
         if not self.LOCAL_DB_SERVER:
             return "sqlite:///./local.db"
+        
+        # Validate required credentials - but allow None for optional development
+        # The actual connection will fail gracefully if credentials are missing
+        if not self.LOCAL_DB_USER or not self.LOCAL_DB_PASSWORD:
+            # Return a connection string that will fail with a clear error message
+            # This allows the server to start but will fail when trying to connect
+            logger.warning(
+                "LOCAL_DB_USER and/or LOCAL_DB_PASSWORD are not set. "
+                "Database connections will fail. Please set these in your .env file."
+            )
+            # Return a connection string that will fail gracefully
+            driver = "ODBC Driver 17 for SQL Server"
+            params = f"DRIVER={{{driver}}};SERVER={self.LOCAL_DB_SERVER},{self.LOCAL_DB_PORT};DATABASE={self.LOCAL_DB_NAME};UID=None;PWD=None"
+            return f"mssql+pyodbc:///?odbc_connect={params}"
             
         driver = "ODBC Driver 17 for SQL Server"
         params = f"DRIVER={{{driver}}};SERVER={self.LOCAL_DB_SERVER},{self.LOCAL_DB_PORT};DATABASE={self.LOCAL_DB_NAME};UID={self.LOCAL_DB_USER};PWD={self.LOCAL_DB_PASSWORD}"
@@ -78,6 +106,17 @@ class Settings:
     def SQLALCHEMY_DATABASE_URI_LOCAL_VALIDATED(self) -> str:
         if not self.LOCAL_DB_SERVER:
             return "sqlite:///./validated.db"
+        
+        # Validate required credentials - but allow None for optional development
+        if not self.LOCAL_DB_USER or not self.LOCAL_DB_PASSWORD:
+            logger.warning(
+                "LOCAL_DB_USER and/or LOCAL_DB_PASSWORD are not set. "
+                "Validated database connections will fail. Please set these in your .env file."
+            )
+            # Return a connection string that will fail gracefully
+            driver = "ODBC Driver 17 for SQL Server"
+            params = f"DRIVER={{{driver}}};SERVER={self.LOCAL_DB_SERVER},{self.LOCAL_DB_PORT};DATABASE={self.LOCAL_DB_NAME_VALIDATED};UID=None;PWD=None"
+            return f"mssql+pyodbc:///?odbc_connect={params}"
             
         driver = "ODBC Driver 17 for SQL Server"
         params = f"DRIVER={{{driver}}};SERVER={self.LOCAL_DB_SERVER},{self.LOCAL_DB_PORT};DATABASE={self.LOCAL_DB_NAME_VALIDATED};UID={self.LOCAL_DB_USER};PWD={self.LOCAL_DB_PASSWORD}"

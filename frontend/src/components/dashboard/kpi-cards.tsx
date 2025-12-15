@@ -1,7 +1,8 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCurrency } from "@/lib/utils";
-import { Briefcase, DollarSign, TrendingUp, Wallet, PlayCircle, AlertTriangle, AlertCircle } from "lucide-react";
+import { Briefcase, DollarSign, TrendingUp, Wallet, PlayCircle, AlertTriangle, AlertCircle, CreditCard } from "lucide-react";
 import { KPI } from "@/types";
+import { ProgressBar } from "@/components/ui/progress-bar";
 
 interface KPICardsProps {
   kpis: KPI;
@@ -9,7 +10,7 @@ interface KPICardsProps {
 
 export function KPICards({ kpis }: KPICardsProps) {
   return (
-    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
       <Card className="hover:shadow-md transition-shadow">
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <CardTitle className="text-sm font-medium text-muted-foreground">
@@ -68,7 +69,7 @@ export function KPICards({ kpis }: KPICardsProps) {
       <Card className="hover:shadow-md transition-shadow">
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <CardTitle className="text-sm font-medium text-muted-foreground">
-            Saldo Disponível
+            Saldo Orçamentário
           </CardTitle>
           <div
             className={`p-1.5 rounded-full ${
@@ -92,8 +93,75 @@ export function KPICards({ kpis }: KPICardsProps) {
             {formatCurrency(kpis.balance)}
           </div>
           <p className="text-xs text-muted-foreground mt-1">
-            Disponível
+            Orçamento - Realizado
           </p>
+        </CardContent>
+      </Card>
+
+      <Card className="hover:shadow-md transition-shadow">
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardTitle className="text-sm font-medium text-muted-foreground">
+            Saldo Financeiro
+          </CardTitle>
+          <div
+            className={`p-1.5 rounded-full ${
+              (kpis.financial_balance ?? 0) < 0 ? "bg-red-500/10" : "bg-purple-500/10"
+            }`}
+          >
+            <CreditCard
+              className={`h-3.5 w-3.5 ${
+                (kpis.financial_balance ?? 0) < 0 ? "text-red-500" : "text-purple-600"
+              }`}
+            />
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div
+            className={`text-xl font-bold truncate ${
+              (kpis.financial_balance ?? 0) < 0 ? "text-red-500" : "text-purple-600"
+            }`}
+            title={formatCurrency(kpis.financial_balance ?? 0)}
+          >
+            {formatCurrency(kpis.financial_balance ?? 0)}
+          </div>
+          {/* Barra de progresso padronizada: Saldo Financeiro / Realizado */}
+          {kpis.total_billing && kpis.total_billing > 0 && kpis.total_realized > 0 && (
+            <div className="mt-2">
+              {(() => {
+                const x = kpis.financial_balance ?? 0; // O que sobrou (pode ser negativo)
+                
+                // Se saldo negativo (provisões > realizado), calcular % de ultrapassagem
+                if (x < 0 && kpis.total_billing && kpis.total_billing > kpis.total_realized) {
+                  const exceededPercentage = (kpis.total_billing / kpis.total_realized) * 100;
+                  return (
+                    <>
+                      <ProgressBar value={100} />
+                      <p className="text-xs text-right mt-1 text-muted-foreground">
+                        {exceededPercentage.toFixed(1)}%
+                      </p>
+                    </>
+                  );
+                }
+                
+                // Se saldo positivo, calcular normalmente
+                const percentage = kpis.total_realized > 0 ? (x / kpis.total_realized) * 100 : 0;
+                const barValue = Math.min(Math.abs(percentage), 100);
+                return (
+                  <>
+                    <ProgressBar value={barValue} />
+                    <p className="text-xs text-right mt-1 text-muted-foreground">
+                      {percentage.toFixed(1)}%
+                    </p>
+                  </>
+                );
+              })()}
+            </div>
+          )}
+          {(!kpis.total_billing || kpis.total_billing === 0) && (
+            <p className="text-xs text-muted-foreground mt-1">
+              Sem faturamento
+            </p>
+          )}
         </CardContent>
       </Card>
 

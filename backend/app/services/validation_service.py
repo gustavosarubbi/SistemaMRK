@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 class ValidationService:
     def __init__(self):
-        self.tables = ["CTT010", "PAC010", "PAD010"]
+        self.tables = ["CTT010", "PAD010"]
         self._ensure_validation_table()
     
     def _ensure_validation_table(self):

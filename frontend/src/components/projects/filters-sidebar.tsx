@@ -23,10 +23,13 @@ import {
     ChevronUp,
     Tag,
     FileText,
+    UserCircle,
+    CheckCircle2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { AdvancedProjectFilters, FilterCounts, DaysRemainingRange, ExecutionRange, Project } from '@/types';
 import { getDaysRemainingForAccountRendering } from '@/lib/date-utils';
+import { DatePicker } from '@/components/date-picker';
 
 interface FiltersSidebarProps {
     filters: AdvancedProjectFilters;
@@ -36,6 +39,7 @@ interface FiltersSidebarProps {
     counts: FilterCounts;
     coordinators: string[];
     clients: string[];
+    analysts: string[];
     isOpen: boolean;
     onToggle: () => void;
     className?: string;
@@ -173,6 +177,7 @@ export function FiltersSidebar({
     counts,
     coordinators,
     clients,
+    analysts,
     isOpen,
     onToggle,
     className,
@@ -220,7 +225,7 @@ export function FiltersSidebar({
                     <FilterOption
                         label="Todos"
                         value=""
-                        count={counts.byStatus.inExecution + counts.byStatus.renderingAccounts + counts.byStatus.finished + counts.byStatus.notStarted}
+                        count={counts.byStatus.inExecution + counts.byStatus.renderingAccounts + counts.byStatus.notStarted + counts.byStatus.finalized}
                         checked={!filters.status}
                         onChange={() => onFiltersChange({ status: '' })}
                     />
@@ -239,17 +244,17 @@ export function FiltersSidebar({
                         onChange={(v) => onFiltersChange({ status: v })}
                     />
                     <FilterOption
-                        label="Finalizados"
-                        value="finished"
-                        count={counts.byStatus.finished}
-                        checked={filters.status === 'finished'}
-                        onChange={(v) => onFiltersChange({ status: v })}
-                    />
-                    <FilterOption
                         label="Não Iniciados"
                         value="not_started"
                         count={counts.byStatus.notStarted}
                         checked={filters.status === 'not_started'}
+                        onChange={(v) => onFiltersChange({ status: v })}
+                    />
+                    <FilterOption
+                        label="Finalizados"
+                        value="finalized"
+                        count={counts.byStatus.finalized}
+                        checked={filters.status === 'finalized'}
                         onChange={(v) => onFiltersChange({ status: v })}
                     />
                 </FilterSection>
@@ -452,16 +457,24 @@ export function FiltersSidebar({
                         </SelectTrigger>
                         <SelectContent>
                             <SelectItem value="all">Todos</SelectItem>
-                            {coordinators.map((coord) => (
-                                <SelectItem key={coord} value={coord}>
+                            {coordinators
+                                .filter((coord) => {
+                                    const normalizedCoord = coord?.trim() || '';
+                                    return normalizedCoord && (counts.byCoordinator[normalizedCoord] || 0) > 0;
+                                })
+                                .map((coord) => {
+                                    const normalizedCoord = coord?.trim() || '';
+                                    return (
+                                <SelectItem key={normalizedCoord} value={normalizedCoord}>
                                     <div className="flex items-center justify-between w-full">
-                                        <span className="truncate">{coord}</span>
+                                        <span className="truncate">{normalizedCoord}</span>
                                         <Badge variant="secondary" className="ml-2 h-4 px-1 text-[10px]">
-                                            {counts.byCoordinator[coord] || 0}
+                                            {counts.byCoordinator[normalizedCoord] || 0}
                                         </Badge>
                                     </div>
                                 </SelectItem>
-                            ))}
+                                );
+                            })}
                         </SelectContent>
                     </Select>
                 </FilterSection>
@@ -477,16 +490,24 @@ export function FiltersSidebar({
                         </SelectTrigger>
                         <SelectContent>
                             <SelectItem value="all">Todos</SelectItem>
-                            {clients.map((client) => (
-                                <SelectItem key={client} value={client}>
+                            {clients
+                                .filter((client) => {
+                                    const normalizedClient = client?.trim() || '';
+                                    return normalizedClient && (counts.byClient[normalizedClient] || 0) > 0;
+                                })
+                                .map((client) => {
+                                    const normalizedClient = client?.trim() || '';
+                                    return (
+                                <SelectItem key={normalizedClient} value={normalizedClient}>
                                     <div className="flex items-center justify-between w-full">
-                                        <span className="truncate">{client}</span>
+                                        <span className="truncate">{normalizedClient}</span>
                                         <Badge variant="secondary" className="ml-2 h-4 px-1 text-[10px]">
-                                            {counts.byClient[client] || 0}
+                                            {counts.byClient[normalizedClient] || 0}
                                         </Badge>
                                     </div>
                                 </SelectItem>
-                            ))}
+                                );
+                            })}
                         </SelectContent>
                     </Select>
                 </FilterSection>
@@ -503,6 +524,7 @@ export function FiltersSidebar({
                         <SelectContent>
                             <SelectItem value="all">Todas</SelectItem>
                             {Object.entries(counts.byClassification)
+                                .filter(([, count]) => count > 0)
                                 .sort(([, a], [, b]) => b - a)
                                 .map(([classification, count]) => (
                                 <SelectItem key={classification} value={classification}>
@@ -530,6 +552,7 @@ export function FiltersSidebar({
                         <SelectContent>
                             <SelectItem value="all">Todos</SelectItem>
                             {Object.entries(counts.byServiceType)
+                                .filter(([, count]) => count > 0)
                                 .sort(([, a], [, b]) => b - a)
                                 .map(([serviceType, count]) => (
                                 <SelectItem key={serviceType} value={serviceType}>
@@ -545,25 +568,81 @@ export function FiltersSidebar({
                     </Select>
                 </FilterSection>
 
+                {/* Analista */}
+                <FilterSection title="Analista" icon={UserCircle} defaultOpen={false}>
+                    <Select
+                        value={filters.analyst || 'all'}
+                        onValueChange={(value) => onFiltersChange({ analyst: value === 'all' ? '' : value })}
+                    >
+                        <SelectTrigger className="h-9">
+                            <SelectValue placeholder="Todos os analistas" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">Todos</SelectItem>
+                            {analysts
+                                .filter((analyst) => {
+                                    const normalizedAnalyst = analyst?.trim() || '';
+                                    // Filtrar apenas números (analistas que são códigos numéricos)
+                                    const isOnlyNumbers = /^\d+$/.test(normalizedAnalyst);
+                                    return normalizedAnalyst && !isOnlyNumbers;
+                                })
+                                .filter((analyst) => {
+                                    const normalizedAnalyst = analyst?.trim() || '';
+                                    return (counts.byAnalyst[normalizedAnalyst] || 0) > 0;
+                                })
+                                .map((analyst) => {
+                                    const normalizedAnalyst = analyst?.trim() || '';
+                                    return (
+                                        <SelectItem key={normalizedAnalyst} value={normalizedAnalyst}>
+                                            <div className="flex items-center justify-between w-full">
+                                                <span className="truncate">{normalizedAnalyst}</span>
+                                                <Badge variant="secondary" className="ml-2 h-4 px-1 text-[10px]">
+                                                    {counts.byAnalyst[normalizedAnalyst] || 0}
+                                                </Badge>
+                                            </div>
+                                        </SelectItem>
+                                    );
+                                })}
+                        </SelectContent>
+                    </Select>
+                </FilterSection>
+
                 {/* Período */}
                 <FilterSection title="Período" icon={Calendar} defaultOpen={false}>
                     <div className="space-y-3">
                         <div>
-                            <Label className="text-xs text-muted-foreground">Data início</Label>
-                            <Input
-                                type="date"
-                                value={filters.startDate || ''}
-                                onChange={(e) => onFiltersChange({ startDate: e.target.value })}
-                                className="h-9 mt-1"
+                            <Label className="text-xs text-muted-foreground mb-2 block">Data início</Label>
+                            <DatePicker
+                                date={filters.startDate ? new Date(filters.startDate + 'T00:00:00') : undefined}
+                                setDate={(date) => {
+                                    onFiltersChange({ 
+                                        startDate: date ? date.toISOString().split('T')[0] : '' 
+                                    });
+                                }}
+                                placeholder="Selecione a data inicial"
+                                className="w-full"
+                                showClearButton={true}
                             />
                         </div>
                         <div>
-                            <Label className="text-xs text-muted-foreground">Data fim</Label>
-                            <Input
-                                type="date"
-                                value={filters.endDate || ''}
-                                onChange={(e) => onFiltersChange({ endDate: e.target.value })}
-                                className="h-9 mt-1"
+                            <Label className="text-xs text-muted-foreground mb-2 block">Data fim</Label>
+                            <DatePicker
+                                date={filters.endDate ? new Date(filters.endDate + 'T00:00:00') : undefined}
+                                setDate={(date) => {
+                                    onFiltersChange({ 
+                                        endDate: date ? date.toISOString().split('T')[0] : '' 
+                                    });
+                                }}
+                                placeholder="Selecione a data final"
+                                className="w-full"
+                                showClearButton={true}
+                            />
+                        </div>
+                        <div className="pt-2">
+                            <FilterCheckbox
+                                label="Mostrar apenas projetos finalizados"
+                                checked={filters.showFinalized || false}
+                                onChange={(checked) => onFiltersChange({ showFinalized: checked })}
                             />
                         </div>
                     </div>

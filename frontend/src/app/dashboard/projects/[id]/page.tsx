@@ -14,34 +14,58 @@ import { ProjectActionsMenu } from '@/components/projects/details/project-action
 export default function ProjectDetailsPage() {
     const params = useParams();
     const router = useRouter();
-    const id = params.id as string;
+    // Next.js já decodifica automaticamente, então apenas fazemos trim
+    const id = (params.id as string)?.trim() || '';
     const [activeTab, setActiveTab] = useState('summary');
 
-    // Fetch Project Details
-    const { data: project, isLoading: isLoadingProject } = useQuery<Project>({
+    // Fetch Project Details - com cache
+    const { data: project, isLoading: isLoadingProject, error: projectError } = useQuery<Project>({
         queryKey: ['project', id],
         queryFn: async () => {
-            const res = await api.get(`/projects/${id}`);
-            return res.data;
+            try {
+                // O Axios já faz encoding automático, mas garantimos que espaços sejam tratados
+                const encodedId = encodeURIComponent(id);
+                const res = await api.get(`/projects/${encodedId}`);
+                
+                if (!res.data || Object.keys(res.data).length === 0) {
+                    throw new Error('Projeto não encontrado');
+                }
+                
+                return res.data;
+            } catch (error: any) {
+                console.error('Erro ao carregar projeto:', error);
+                console.error('ID tentado:', id);
+                console.error('URL completa:', `${api.defaults.baseURL}/projects/${encodeURIComponent(id)}`);
+                throw error;
+            }
         },
+        staleTime: 120000, // 2 minutos - dados do projeto mudam pouco
+        gcTime: 300000, // 5 minutos
         retry: 1,
         refetchOnWindowFocus: false,
+        refetchOnMount: false,
+        enabled: !!id, // Só executa se tiver um ID válido
     });
 
-    // Fetch Movements (Expenses)
+    // Fetch Movements (Expenses) - com cache
     const { data: movements = [], isLoading: isLoadingMovements, error: movementsError } = useQuery<any[]>({
         queryKey: ['project_movements', id],
         queryFn: async () => {
             try {
-                const res = await api.get(`/movements/${id}`);
+                const encodedId = encodeURIComponent(id);
+                const res = await api.get(`/movements/${encodedId}`);
                 return res.data || [];
             } catch (error) {
                 console.error('Erro ao carregar movimentações:', error);
                 return [];
             }
         },
+        staleTime: 60000, // 1 minuto - movimentações podem mudar mais frequentemente
+        gcTime: 300000, // 5 minutos
         retry: 1,
         refetchOnWindowFocus: false,
+        refetchOnMount: false,
+        enabled: !!id, // Só executa se tiver um ID válido
     });
 
     const formatDate = (dateStr: string) => {
@@ -61,17 +85,36 @@ export default function ProjectDetailsPage() {
         return <ProjectDetailsSkeleton />;
     }
 
-    if (!project || !project.CTT_CUSTO) {
+    if (projectError || !project || !project.CTT_CUSTO) {
+        const errorMessage = projectError 
+            ? (projectError as any)?.response?.data?.detail || (projectError as any)?.message || 'Erro ao carregar projeto.'
+            : 'Projeto não encontrado.';
+        
         return (
-            <div className="flex flex-col items-center justify-center h-96 space-y-4">
-                <p className="text-muted-foreground">Projeto não encontrado.</p>
-                <Button onClick={() => router.back()}>Voltar</Button>
+            <div className="flex flex-col items-center justify-center h-96 space-y-4 px-4 md:px-6">
+                <p className="text-muted-foreground">
+                    {errorMessage}
+                </p>
+                {projectError && (
+                    <div className="text-sm text-muted-foreground space-y-1">
+                        <p>ID: {id}</p>
+                        {(projectError as any)?.config && (
+                            <p className="text-xs">
+                                URL: {(projectError as any).config.baseURL}{(projectError as any).config.url}
+                            </p>
+                        )}
+                    </div>
+                )}
+                <div className="flex gap-2">
+                    <Button onClick={() => router.back()}>Voltar</Button>
+                    <Button variant="outline" onClick={() => window.location.reload()}>Recarregar</Button>
+                </div>
             </div>
         );
     }
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-6 px-4 md:px-6">
             {/* Header */}
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 justify-between">
                 <PageHeader

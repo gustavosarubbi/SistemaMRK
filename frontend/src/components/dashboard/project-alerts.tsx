@@ -41,7 +41,7 @@ export function ProjectAlerts({ project }: ProjectAlertsProps) {
             id: 'return-risk',
             icon: AlertTriangle,
             color: 'text-amber-500',
-            message: 'Risco de Devolução: Projeto acabando com muito saldo disponível.'
+            message: 'Risco de Devolução: Projeto acabando com muito saldo orçamentário.'
         });
     }
 
@@ -98,6 +98,8 @@ export function ProjectAlerts({ project }: ProjectAlertsProps) {
         </div>
     );
 }
+
+
 
 
 

@@ -7,15 +7,24 @@ from pydantic import ValidationError
 from app.core.config import settings
 from app.core import security
 from app.schemas.token import TokenPayload
-from app.db.session import SessionLocal
+from app.db.session import SessionLocal, SessionRemote
 
 reusable_oauth2 = OAuth2PasswordBearer(
     tokenUrl=f"{settings.API_V1_STR}/auth/login"
 )
 
 def get_db() -> Generator:
+    """Retorna sessão do banco LOCAL (para PAD010 e dados sincronizados)"""
     try:
         db = SessionLocal()
+        yield db
+    finally:
+        db.close()
+
+def get_db_remote() -> Generator:
+    """Retorna sessão do banco REMOTO"""
+    try:
+        db = SessionRemote()
         yield db
     finally:
         db.close()

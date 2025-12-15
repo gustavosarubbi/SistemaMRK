@@ -20,7 +20,7 @@ interface TimelineDataPoint {
   month: string;
   in_execution: number;
   ending_soon: number;
-  finished: number;
+  rendering_accounts: number;
   not_started: number;
 }
 
@@ -98,11 +98,11 @@ export function ProjectsTimelineChart({ data = [] }: ProjectsTimelineChartProps)
                 />
                 <Area
                   type="monotone"
-                  dataKey="finished"
-                  name="Finalizados"
+                  dataKey="rendering_accounts"
+                  name="Prestar Contas"
                   stackId="1"
-                  stroke="#6b7280"
-                  fill="#6b7280"
+                  stroke="#f97316"
+                  fill="#f97316"
                   fillOpacity={0.6}
                 />
                 <Area
@@ -122,5 +122,6 @@ export function ProjectsTimelineChart({ data = [] }: ProjectsTimelineChartProps)
     </Card>
   );
 }
+
 
 

@@ -1,8 +1,12 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from app.core.config import settings
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Remote Database (Source - Read Only intent)
+# Allow engine creation even if credentials are missing - will fail on actual connection
 engine_remote = create_engine(
     settings.SQLALCHEMY_DATABASE_URI_REMOTE, 
     pool_pre_ping=True,
@@ -13,6 +17,7 @@ SessionRemote = sessionmaker(autocommit=False, autoflush=False, bind=engine_remo
 
 # Local Database (Destination - Read/Write)
 # fast_executemany=True is crucial for performance with large bulk inserts in SQL Server
+# Allow engine creation even if credentials are missing - will fail on actual connection
 engine_local = create_engine(
     settings.SQLALCHEMY_DATABASE_URI_LOCAL, 
     pool_pre_ping=True,
@@ -31,6 +36,7 @@ def receive_before_cursor_execute(conn, cursor, statement, params, context, exec
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine_local)
 
 # Validated Database (Dados Validados - Read/Write)
+# Allow engine creation even if credentials are missing - will fail on actual connection
 engine_validated = create_engine(
     settings.SQLALCHEMY_DATABASE_URI_LOCAL_VALIDATED, 
     pool_pre_ping=True,

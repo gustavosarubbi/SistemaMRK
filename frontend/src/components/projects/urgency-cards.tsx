@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { AlertOctagon, Clock, AlertTriangle, CalendarX, CalendarClock } from 'lucide-react';
+import { AlertOctagon, AlertTriangle, CalendarX } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface UrgencyCardsProps {
@@ -14,6 +14,7 @@ interface UrgencyCardsProps {
         renderingUrgent: number;
         renderingAccounts: number;
     };
+    renderingAccounts60Days?: number; // Projetos com prazo de 60 dias
     onCardClick: (filter: string) => void;
     activeFilter?: string;
 }
@@ -50,32 +51,8 @@ function AnimatedNumber({ value, duration = 500 }: { value: number; duration?: n
     return <span>{displayValue}</span>;
 }
 
-export function UrgencyCards({ counts, onCardClick, activeFilter }: UrgencyCardsProps) {
+export function UrgencyCards({ counts, renderingAccounts60Days = 0, onCardClick, activeFilter }: UrgencyCardsProps) {
     const cards = [
-        {
-            id: 'today',
-            title: 'Vencendo Hoje',
-            value: counts.vencendoHoje,
-            icon: CalendarClock,
-            color: 'text-red-600',
-            bgColor: 'bg-red-50',
-            borderColor: 'border-red-200',
-            hoverBorder: 'hover:border-red-300',
-            description: 'Projetos com vencimento no dia de hoje',
-            pulse: counts.vencendoHoje > 0,
-        },
-        {
-            id: 'week',
-            title: 'Próximos 7 Dias',
-            value: counts.urgentWeek,
-            icon: Clock,
-            color: 'text-orange-600',
-            bgColor: 'bg-orange-50',
-            borderColor: 'border-orange-200',
-            hoverBorder: 'hover:border-orange-300',
-            description: 'Projetos vencendo nos próximos 7 dias',
-            pulse: false,
-        },
         {
             id: 'critical',
             title: 'Críticos',
@@ -86,6 +63,7 @@ export function UrgencyCards({ counts, onCardClick, activeFilter }: UrgencyCards
             borderColor: 'border-red-300',
             hoverBorder: 'hover:border-red-400',
             description: 'Vigência vence em ≤7 dias, PC urgente ou execução >100%',
+            detailedInfo: `Total de projetos críticos que exigem atenção imediata`,
             pulse: counts.critical > 0,
         },
         {
@@ -98,6 +76,7 @@ export function UrgencyCards({ counts, onCardClick, activeFilter }: UrgencyCards
             borderColor: 'border-rose-300',
             hoverBorder: 'hover:border-rose-400',
             description: 'Prestação de contas com ≤15 dias restantes',
+            detailedInfo: `Projetos com prestação de contas urgente (≤15 dias restantes)`,
             pulse: counts.renderingUrgent > 0,
         },
         {
@@ -109,14 +88,15 @@ export function UrgencyCards({ counts, onCardClick, activeFilter }: UrgencyCards
             bgColor: 'bg-amber-50',
             borderColor: 'border-amber-200',
             hoverBorder: 'hover:border-amber-300',
-            description: 'Em período de prestação de contas (60 dias)',
+            description: 'Em período de prestação de contas',
+            detailedInfo: `Total: ${counts.renderingAccounts} projetos\nPrazo de 60 dias: ${renderingAccounts60Days} projetos`,
             pulse: false,
         },
     ];
 
     return (
         <TooltipProvider>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 {cards.map((card) => {
                     const isActive = activeFilter === card.id;
                     const Icon = card.icon;
@@ -155,8 +135,15 @@ export function UrgencyCards({ counts, onCardClick, activeFilter }: UrgencyCards
                                     </CardContent>
                                 </Card>
                             </TooltipTrigger>
-                            <TooltipContent>
-                                <p className="text-xs">{card.description}</p>
+                            <TooltipContent side="top" className="max-w-xs">
+                                <div className="space-y-1">
+                                    <p className="text-xs font-semibold">{card.description}</p>
+                                    {card.detailedInfo && (
+                                        <p className="text-xs text-muted-foreground whitespace-pre-line">
+                                            {card.detailedInfo}
+                                        </p>
+                                    )}
+                                </div>
                             </TooltipContent>
                         </Tooltip>
                     );

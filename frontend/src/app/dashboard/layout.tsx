@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { useAuthStore } from '@/store/authStore';
 import { useRouter } from 'next/navigation';
 import { Header } from '@/components/layout/header';
+import { DashboardProvider } from '@/contexts/dashboard-context';
 
 export default function DashboardLayout({
   children,
@@ -23,12 +24,14 @@ export default function DashboardLayout({
   if (!mounted) return null; // Prevent hydration mismatch
 
   return (
-    <div className="min-h-screen flex flex-col bg-gray-50">
-      <Header />
-      <main className="flex-1 container mx-auto py-6">
-        {children}
-      </main>
-    </div>
+    <DashboardProvider>
+      <div className="min-h-screen flex flex-col bg-gray-50">
+        <Header />
+        <main className="flex-1 py-6 pl-4 md:pl-6 pr-2 md:pr-4">
+          {children}
+        </main>
+      </div>
+    </DashboardProvider>
   );
 }
 

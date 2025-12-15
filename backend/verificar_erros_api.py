@@ -18,7 +18,7 @@ def testar_endpoint_projetos_com_erros():
     
     try:
         from app.db.session import SessionLocal
-        from app.models.protheus import CTT010, PAC010, PAD010
+        from app.models.protheus import CTT010, PAD010
         from sqlalchemy import func
         
         db = SessionLocal()
@@ -27,41 +27,6 @@ def testar_endpoint_projetos_com_erros():
         print("\n1️⃣ Testando query de projetos...")
         projects = db.query(CTT010).limit(5).all()
         print(f"   ✅ {len(projects)} projetos obtidos")
-        
-        # Testar query de realized
-        print("\n2️⃣ Testando query de realized...")
-        custos_list = [p.CTT_CUSTO for p in projects]
-        print(f"   📋 Custos: {custos_list}")
-        
-        if custos_list:
-            realized_results = db.query(
-                PAC010.PAC_CUSTO,
-                func.sum(PAC010.PAC_VALOR).label('realized')
-            ).filter(PAC010.PAC_CUSTO.in_(custos_list))\
-             .group_by(PAC010.PAC_CUSTO).all()
-            
-            print(f"   ✅ {len(realized_results)} resultados obtidos")
-            
-            # Verificar tipo do resultado
-            if realized_results:
-                first_row = realized_results[0]
-                print(f"   📋 Tipo do resultado: {type(first_row)}")
-                print(f"   📋 Primeiro resultado: {first_row}")
-                
-                # Tentar acessar como atributo
-                try:
-                    custo = first_row.PAC_CUSTO
-                    realized = first_row.realized
-                    print(f"   ✅ Acesso como atributo OK: {custo} = {realized}")
-                except AttributeError as e:
-                    print(f"   ❌ Erro ao acessar como atributo: {e}")
-                    # Tentar como tupla
-                    try:
-                        custo = first_row[0]
-                        realized = first_row[1]
-                        print(f"   ✅ Acesso como tupla OK: {custo} = {realized}")
-                    except Exception as e2:
-                        print(f"   ❌ Erro ao acessar como tupla: {e2}")
         
         # Testar query de budget
         print("\n3️⃣ Testando query de budget...")
@@ -108,6 +73,10 @@ def testar_endpoint_projetos_com_erros():
 
 if __name__ == "__main__":
     testar_endpoint_projetos_com_erros()
+
+
+
+
 
 
 

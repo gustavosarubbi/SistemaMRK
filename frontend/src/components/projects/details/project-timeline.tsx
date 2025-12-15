@@ -5,9 +5,10 @@ interface ProjectTimelineProps {
     startDate: string; // YYYYMMDD format
     endDate: string; // YYYYMMDD format
     className?: string;
+    isFinalized?: boolean; // Se o projeto foi validado como finalizado
 }
 
-export function ProjectTimeline({ startDate, endDate, className }: ProjectTimelineProps) {
+export function ProjectTimeline({ startDate, endDate, className, isFinalized = false }: ProjectTimelineProps) {
     const formatDate = (dateStr: string) => {
         if (!dateStr || dateStr.length !== 8) return '-';
         return `${dateStr.substring(6, 8)}/${dateStr.substring(4, 6)}/${dateStr.substring(0, 4)}`;
@@ -52,7 +53,7 @@ export function ProjectTimeline({ startDate, endDate, className }: ProjectTimeli
     } else if (today > end) {
         status = 'finished';
         statusColor = 'bg-muted-foreground';
-        statusText = 'Finalizado';
+        statusText = isFinalized ? 'Finalizado' : 'Pendente';
     } else if (remainingDays <= 0) {
         status = 'overdue';
         statusColor = 'bg-red-600';
@@ -106,5 +107,7 @@ export function ProjectTimeline({ startDate, endDate, className }: ProjectTimeli
         </div>
     );
 }
+
+
 
 

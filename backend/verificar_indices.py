@@ -18,7 +18,6 @@ def verificar_e_criar_indices():
     
     # Índices necessários para performance
     indices_necessarios = {
-        "PAC010": ["PAC_CUSTO"],
         "PAD010": ["PAD_CUSTO"]
     }
     
@@ -76,6 +75,10 @@ if __name__ == "__main__":
         import traceback
         traceback.print_exc()
         sys.exit(1)
+
+
+
+
 
 
 

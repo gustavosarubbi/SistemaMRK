@@ -11,7 +11,7 @@ import {
     getDaysRemainingForAccountRendering,
     isRenderingAccountsUrgent,
 } from '@/lib/date-utils';
-import { getProjectClassification, getServiceType } from '@/lib/project-mappings';
+import { getProjectClassification, getServiceType, getProjectAnalyst } from '@/lib/project-mappings';
 
 /**
  * Hook para calcular contagens dinâmicas de projetos por categoria
@@ -22,8 +22,8 @@ export function useFilterCounts(projects: Project[]): FilterCounts {
             byStatus: {
                 inExecution: 0,
                 renderingAccounts: 0,
-                finished: 0,
                 notStarted: 0,
+                finalized: 0,
             },
             byDaysRemaining: {
                 overdue: 0,
@@ -42,6 +42,7 @@ export function useFilterCounts(projects: Project[]): FilterCounts {
             byClient: {},
             byClassification: {},
             byServiceType: {},
+            byAnalyst: {},
         };
 
         projects.forEach(project => {
@@ -50,14 +51,17 @@ export function useFilterCounts(projects: Project[]): FilterCounts {
             const execution = project.usage_percent || 0;
 
             // Por Status
-            if (isNotStarted(project.CTT_DTINI)) {
+            // Projetos finalizados têm prioridade e não entram em outras categorias
+            if (project.is_finalized) {
+                counts.byStatus.finalized++;
+            } else if (isNotStarted(project.CTT_DTINI)) {
                 counts.byStatus.notStarted++;
             } else if (isInExecution(project.CTT_DTINI, project.CTT_DTFIM)) {
                 counts.byStatus.inExecution++;
-            } else if (isInRenderingAccountsPeriod(project.CTT_DTFIM)) {
+            } else if (daysSinceEnd > 0) {
+                // Todos os projetos que já terminaram vão para renderingAccounts
+                // EXCETO os que foram finalizados (já tratados acima)
                 counts.byStatus.renderingAccounts++;
-            } else if (daysSinceEnd > 60) {
-                counts.byStatus.finished++;
             }
 
             // Por Dias Restantes (apenas projetos em execução - vigência ainda não terminou)
@@ -85,12 +89,12 @@ export function useFilterCounts(projects: Project[]): FilterCounts {
                 counts.byExecution.low++;
             }
 
-            // Por Coordenador
-            const coordinator = project.CTT_NOMECO || 'Sem coordenador';
+            // Por Coordenador - normalizar removendo espaços extras
+            const coordinator = (project.CTT_NOMECO || '').trim() || 'Sem coordenador';
             counts.byCoordinator[coordinator] = (counts.byCoordinator[coordinator] || 0) + 1;
 
-            // Por Cliente
-            const client = project.CTT_UNIDES || 'Sem cliente';
+            // Por Cliente - normalizar removendo espaços extras
+            const client = (project.CTT_UNIDES || '').trim() || 'Sem cliente';
             counts.byClient[client] = (counts.byClient[client] || 0) + 1;
 
             // Por Classificação
@@ -100,6 +104,12 @@ export function useFilterCounts(projects: Project[]): FilterCounts {
             // Por Tipo de Prestação
             const serviceType = getServiceType(project.CTT_TPCONV);
             counts.byServiceType[serviceType] = (counts.byServiceType[serviceType] || 0) + 1;
+
+            // Por Analista - normalizar removendo espaços extras
+            const analyst = getProjectAnalyst(project);
+            if (analyst && analyst !== '-') {
+                counts.byAnalyst[analyst] = (counts.byAnalyst[analyst] || 0) + 1;
+            }
         });
 
         return counts;

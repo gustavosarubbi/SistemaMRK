@@ -249,8 +249,12 @@ export function DataTable<TData, TValue>({
                                                 target.closest('input[type="checkbox"]') ||
                                                 target.closest('button') ||
                                                 target.closest('a') ||
-                                                target.closest('[role="button"]')
+                                                target.closest('[role="button"]') ||
+                                                target.closest('label') ||
+                                                target.tagName === 'LABEL' ||
+                                                target.tagName === 'INPUT'
                                             ) {
+                                                e.stopPropagation()
                                                 return
                                             }
                                             

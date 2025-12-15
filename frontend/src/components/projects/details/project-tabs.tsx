@@ -2,7 +2,6 @@
 
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { SummaryTab } from './tabs/summary-tab';
-import { ChartsTab } from './tabs/charts-tab';
 import { MovementsTab } from './tabs/movements-tab';
 import { NotesTab } from './tabs/notes-tab';
 import { AttachmentsTab } from './tabs/attachments-tab';
@@ -36,12 +35,9 @@ export function ProjectTabs({
 
     return (
         <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
-            <TabsList className="grid w-full grid-cols-6 mb-6 overflow-x-auto">
+            <TabsList className="grid w-full grid-cols-5 mb-6 overflow-x-auto">
                 <TabsTrigger value="summary" className="text-xs sm:text-sm whitespace-nowrap">
                     Resumo
-                </TabsTrigger>
-                <TabsTrigger value="charts" className="text-xs sm:text-sm whitespace-nowrap">
-                    Gráficos
                 </TabsTrigger>
                 <TabsTrigger value="movements" className="text-xs sm:text-sm whitespace-nowrap">
                     Movimentações
@@ -59,15 +55,6 @@ export function ProjectTabs({
 
             <TabsContent value="summary" className="mt-0">
                 <SummaryTab project={project} />
-            </TabsContent>
-
-            <TabsContent value="charts" className="mt-0">
-                <ChartsTab
-                    movements={movements}
-                    budget={project.budget || 0}
-                    realized={project.realized || 0}
-                    formatDate={formatDate}
-                />
             </TabsContent>
 
             <TabsContent value="movements" className="mt-0">

@@ -138,3 +138,7 @@ export function deleteFileFromStorage(attachmentId: string): void {
   localStorage.removeItem(`attachment_file_${attachmentId}`);
 }
 
+
+
+
+

@@ -1,10 +1,12 @@
 from typing import Any, List, Optional
 from datetime import datetime, timedelta
+from pydantic import BaseModel
 from fastapi import APIRouter, Depends, Query, HTTPException, UploadFile, File, Form
 from sqlalchemy.orm import Session
-from sqlalchemy import func, select
+from sqlalchemy import func, select, or_
 from app.api import deps
-from app.models.protheus import CTT010, PAC010, PAD010, SC6010
+from app.models.protheus import CTT010, PAD010, SC6010, SE2010
+from app.models.project_status import ProjectStatus
 from app.models.base import Base
 from app.schemas.project import ProjectCreate
 from app.schemas.notes import ProjectNoteCreate, ProjectNoteUpdate, ProjectNoteResponse
@@ -54,6 +56,8 @@ def read_projects(
     coordinator: Optional[str] = None,
     client: Optional[str] = None,
     status: Optional[str] = None,
+    analyst: Optional[str] = None,
+    show_finalized: Optional[bool] = None,
     current_user: str = Depends(deps.get_current_user),
 ) -> Any:
     """
@@ -81,23 +85,61 @@ def read_projects(
         if client:
             query = query.filter(CTT010.CTT_UNIDES.ilike(f"%{client}%"))
         
+        if analyst:
+            query = query.filter(
+                (CTT010.CTT_ANADES.ilike(f"%{analyst}%")) |
+                (CTT010.CTT_ANALIS.ilike(f"%{analyst}%"))
+            )
+        
         if status:
             today_dt = datetime.now()
             today = today_dt.strftime("%Y%m%d")
+            
+            # Get finalized projects to exclude from rendering_accounts
+            finalized_custos_list = []
+            try:
+                finalized_statuses = db.query(ProjectStatus.CTT_CUSTO).filter(ProjectStatus.is_finalized == True).all()
+                finalized_custos_list = [str(status.CTT_CUSTO).strip() for status in finalized_statuses if status.CTT_CUSTO]
+            except Exception as e:
+                # Se a tabela não existir, continua sem projetos finalizados
+                print(f"Aviso: Erro ao consultar projetos finalizados: {str(e)}")
             
             if status == 'in_execution':
                 # Vigencia: Start <= Today <= End
                 query = query.filter(CTT010.CTT_DTINI <= today, CTT010.CTT_DTFIM >= today)
             elif status == 'rendering_accounts':
-                # Prestar Contas: End < Today <= End + 60 days
-                # Logically equivalent to: End >= Today - 60 days AND End < Today
+                # Prestar Contas: Todos os projetos que já terminaram (End < Today)
+                # EXCETO os que foram finalizados
+                query = query.filter(CTT010.CTT_DTFIM < today)
+                if finalized_custos_list:
+                    query = query.filter(~CTT010.CTT_CUSTO.in_(finalized_custos_list))
+            elif status == 'rendering_accounts_60days':
+                # Prazo de 60 Dias: Projetos encerrados há menos de 60 dias
+                # EXCETO os que foram finalizados
                 sixty_days_ago = (today_dt - timedelta(days=60)).strftime("%Y%m%d")
-                query = query.filter(CTT010.CTT_DTFIM >= sixty_days_ago, CTT010.CTT_DTFIM < today)
+                query = query.filter(
+                    CTT010.CTT_DTFIM < today,
+                    CTT010.CTT_DTFIM >= sixty_days_ago
+                )
+                if finalized_custos_list:
+                    query = query.filter(~CTT010.CTT_CUSTO.in_(finalized_custos_list))
             elif status == 'finished':
-                # Finalizado: Today > End + 60 days
-                # Logically equivalent to: End < Today - 60 days
-                sixty_days_ago = (today_dt - timedelta(days=60)).strftime("%Y%m%d")
-                query = query.filter(CTT010.CTT_DTFIM < sixty_days_ago)
+                # Finalizado: Removido - todos os projetos finalizados vão para "rendering_accounts"
+                # Mantido apenas para compatibilidade, mas retorna vazio
+                query = query.filter(False)  # Sempre retorna vazio
+            elif status == 'finalized':
+                # Finalizados: Projetos com is_finalized = True na tabela PROJECT_STATUS
+                try:
+                    finalized_custos = db.query(ProjectStatus.CTT_CUSTO).filter(ProjectStatus.is_finalized == True).all()
+                    finalized_custos_list = [str(status.CTT_CUSTO).strip() for status in finalized_custos if status.CTT_CUSTO]
+                    if finalized_custos_list:
+                        query = query.filter(CTT010.CTT_CUSTO.in_(finalized_custos_list))
+                    else:
+                        query = query.filter(False)  # Nenhum projeto finalizado
+                except Exception as e:
+                    # Se a tabela não existir, retorna vazio
+                    print(f"Aviso: Erro ao filtrar projetos finalizados: {str(e)}")
+                    query = query.filter(False)
             elif status == 'active':
                 # Active + Rendering Accounts
                 # Active means: Not Finished (> 60 days past end) AND Not Future (Started) ? 
@@ -116,12 +158,10 @@ def read_projects(
                 pass # Show everything
             
         else:
-            # Default behavior: Show only active projects
-            # Exclude projects finished more than 60 days ago
-            today_dt = datetime.now()
-            sixty_days_ago = (today_dt - timedelta(days=60)).strftime("%Y%m%d")
+            # Default behavior: Show all projects (including those that ended)
+            # Não excluir projetos finalizados - todos podem prestar contas
+            # Apenas garantir que a data de fim não está vazia
             query = query.filter(
-                CTT010.CTT_DTFIM >= sixty_days_ago,
                 CTT010.CTT_DTFIM != '',
                 CTT010.CTT_DTFIM != None
             )
@@ -136,10 +176,29 @@ def read_projects(
             # Filter by start date up to this end date, or actual end date?
             # Assuming we want projects that started before or on this date
             query = query.filter(CTT010.CTT_DTINI <= d_end)
+        
+        # Filter by finalized status (if show_finalized is provided)
+        if show_finalized is not None:
+            try:
+                finalized_custos = db.query(ProjectStatus.CTT_CUSTO).filter(ProjectStatus.is_finalized == True).all()
+                finalized_custos_list = [str(status.CTT_CUSTO).strip() for status in finalized_custos if status.CTT_CUSTO]
+                if show_finalized:
+                    # Mostrar apenas projetos finalizados
+                    if finalized_custos_list:
+                        query = query.filter(CTT010.CTT_CUSTO.in_(finalized_custos_list))
+                    else:
+                        query = query.filter(False)  # Nenhum projeto finalizado
+                else:
+                    # Excluir projetos finalizados
+                    if finalized_custos_list:
+                        query = query.filter(~CTT010.CTT_CUSTO.in_(finalized_custos_list))
+            except Exception as e:
+                # Se a tabela não existir, ignora o filtro
+                print(f"Aviso: Erro ao filtrar projetos finalizados: {str(e)}")
 
-        # --- Statistics Calculation ---
-        # Calculate stats for the current filter set (ignoring the status filter itself to show distribution)
-        # Note: We create a separate query object for stats to avoid affecting the main pagination query
+        # --- Statistics Calculation (Optimized with SQL Aggregation) ---
+        # Calculate stats for the current filter set using SQL aggregation instead of fetching all rows
+        # This is MUCH faster, especially with large datasets
         
         stats_query = db.query(CTT010)
         
@@ -160,39 +219,64 @@ def read_projects(
         if end_date:
             d_end_stats = end_date.replace("-", "")
             stats_query = stats_query.filter(CTT010.CTT_DTINI <= d_end_stats)
-            
-        # Get all relevant dates for classification
-        # We fetch only necessary columns to minimize load
-        all_projects_dates = stats_query.with_entities(CTT010.CTT_DTINI, CTT010.CTT_DTFIM).all()
+        
+        # Filter valid dates only (8 characters)
+        stats_query = stats_query.filter(
+            func.len(CTT010.CTT_DTINI) == 8,
+            func.len(CTT010.CTT_DTFIM) == 8
+        )
+        
+        # Get finalized projects (cached via ProjectStatusService)
+        from app.services.project_status_service import ProjectStatusService
+        finalized_custos = ProjectStatusService._get_finalized_custos(db)
         
         today_dt = datetime.now()
         today_str = today_dt.strftime("%Y%m%d")
         sixty_days_ago_str = (today_dt - timedelta(days=60)).strftime("%Y%m%d")
         
-        stats = {
-            "total": len(all_projects_dates),
-            "in_execution": 0,
-            "rendering_accounts": 0,
-            "finished": 0,
-            "not_started": 0
-        }
+        # Calculate stats using SQL aggregation (much faster than Python loops)
+        total_count = stats_query.count()
         
-        for p in all_projects_dates:
-            dt_ini = p.CTT_DTINI or ""
-            dt_fim = p.CTT_DTFIM or ""
-            
-            # Skip invalid dates
-            if len(dt_ini) != 8 or len(dt_fim) != 8:
-                continue
-                
-            if dt_ini <= today_str and dt_fim >= today_str:
-                stats["in_execution"] += 1
-            elif dt_fim >= sixty_days_ago_str and dt_fim < today_str:
-                stats["rendering_accounts"] += 1
-            elif dt_fim < sixty_days_ago_str:
-                stats["finished"] += 1
-            elif dt_ini > today_str:
-                stats["not_started"] += 1
+        # In execution: start <= today <= end
+        in_execution_query = stats_query.filter(
+            CTT010.CTT_DTINI <= today_str,
+            CTT010.CTT_DTFIM >= today_str
+        )
+        in_execution_count = in_execution_query.count()
+        
+        # Not started: start > today
+        not_started_query = stats_query.filter(CTT010.CTT_DTINI > today_str)
+        not_started_count = not_started_query.count()
+        
+        # Rendering accounts: end < today AND not finalized
+        rendering_query = stats_query.filter(CTT010.CTT_DTFIM < today_str)
+        rendering_projects = rendering_query.with_entities(CTT010.CTT_CUSTO).all()
+        rendering_custos = {str(p.CTT_CUSTO).strip() for p in rendering_projects if p.CTT_CUSTO}
+        non_finalized_rendering = rendering_custos - finalized_custos
+        rendering_accounts_count = len(non_finalized_rendering)
+        
+        # Rendering accounts 60 days: ended in last 60 days AND not finalized
+        rendering_60days_query = stats_query.filter(
+            CTT010.CTT_DTFIM < today_str,
+            CTT010.CTT_DTFIM >= sixty_days_ago_str
+        )
+        rendering_60days_projects = rendering_60days_query.with_entities(CTT010.CTT_CUSTO).all()
+        rendering_60days_custos = {str(p.CTT_CUSTO).strip() for p in rendering_60days_projects if p.CTT_CUSTO}
+        non_finalized_rendering_60days = rendering_60days_custos - finalized_custos
+        rendering_accounts_60days_count = len(non_finalized_rendering_60days)
+        
+        # Finalized count
+        finalized_query = stats_query.filter(CTT010.CTT_CUSTO.in_(list(finalized_custos))) if finalized_custos else stats_query.filter(False)
+        finalized_count = finalized_query.count() if finalized_custos else 0
+        
+        stats = {
+            "total": total_count,
+            "in_execution": in_execution_count,
+            "rendering_accounts": rendering_accounts_count,
+            "rendering_accounts_60days": rendering_accounts_60days_count,
+            "not_started": not_started_count,
+            "finalized": finalized_count
+        }
             
         # Get total count for pagination (for the main query)
         total = query.count()
@@ -212,55 +296,30 @@ def read_projects(
         # Get all realized amounts in one query
         realized_dict = {}
         if custos_list:
-            # Realized = PAD_APAGAR + PAD_REALIZ where PAD_NATURE > 4 dígitos
-            realized_results = db.query(
-                PAD010.PAD_CUSTO,
-                func.sum(func.coalesce(PAD010.PAD_APAGAR, 0) + func.coalesce(PAD010.PAD_REALIZ, 0)).label('realized')
-            ).filter(
-                PAD010.PAD_CUSTO.in_(custos_list),
-                func.length(PAD010.PAD_NATURE) > 4
-            ).group_by(PAD010.PAD_CUSTO).all()
-            
-            # Handle both Row objects and tuples
-            realized_dict = {}
-            for row in realized_results:
-                try:
-                    custo = row.PAD_CUSTO.strip() if hasattr(row, 'PAD_CUSTO') else str(row[0]).strip()
-                    realized = float(row.realized or 0.0) if hasattr(row, 'realized') else float(row[1] or 0.0)
-                    realized_dict[custo] = realized
-                except Exception as e:
-                    print(f"Error processing realized row: {e}, row type: {type(row)}")
-                    continue
-            
-            # Get all billing provisions (SC6010) in one query
-            # Subtrair provisões de faturamento onde C6_Serie e C8_Nota não estão vazios
-            billing_provisions_results = db.query(
-                SC6010.C6_CUSTO,
-                func.sum(SC6010.C6_PRCVEN).label('billing_provisions')
-            ).filter(
-                SC6010.C6_CUSTO.in_(custos_list),
-                SC6010.D_E_L_E_T_ != '*',
-                SC6010.C6_SERIE.isnot(None),
-                SC6010.C6_SERIE != '',
-                SC6010.C8_NOTA.isnot(None),
-                SC6010.C8_NOTA != ''
-            ).group_by(SC6010.C6_CUSTO).all()
-            
-            # Create dict of billing provisions
-            billing_provisions_dict = {}
-            for row in billing_provisions_results:
-                try:
-                    custo = row.C6_CUSTO.strip() if hasattr(row, 'C6_CUSTO') else str(row[0]).strip()
-                    provisions = float(row.billing_provisions or 0.0) if hasattr(row, 'billing_provisions') else float(row[1] or 0.0)
-                    billing_provisions_dict[custo] = provisions
-                except Exception as e:
-                    print(f"Error processing billing provisions row: {e}, row type: {type(row)}")
-                    continue
-            
-            # Subtrair provisões do realizado
-            for custo in realized_dict:
-                if custo in billing_provisions_dict:
-                    realized_dict[custo] -= billing_provisions_dict[custo]
+            try:
+                # Realized = Sum(E2_VALOR) from SE2010 where E2_CUSTO matches
+                realized_results = db.query(
+                    SE2010.E2_CUSTO,
+                    func.sum(func.coalesce(SE2010.E2_VALOR, 0)).label('realized')
+                ).filter(
+                    SE2010.E2_CUSTO.in_(custos_list),
+                    SE2010.D_E_L_E_T_ != '*'
+                ).group_by(SE2010.E2_CUSTO).all()
+                
+                # Handle both Row objects and tuples
+                realized_dict = {}
+                for row in realized_results:
+                    try:
+                        custo = row.E2_CUSTO.strip() if hasattr(row, 'E2_CUSTO') else str(row[0]).strip()
+                        realized = float(row.realized or 0.0) if hasattr(row, 'realized') else float(row[1] or 0.0)
+                        realized_dict[custo] = realized
+                    except Exception as e:
+                        print(f"Error processing realized row: {e}, row type: {type(row)}")
+                        continue
+            except Exception as e:
+                # Se a tabela SE2010 não existir ainda, retorna dict vazio
+                print(f"Warning: SE2010 table not available: {e}")
+                realized_dict = {}
         
         # Build response data using pre-fetched values
         data = []
@@ -305,7 +364,7 @@ def read_projects(
             "page": page,
             "limit": limit,
             "total_pages": 0,
-            "stats": {"total": 0, "in_execution": 0, "rendering_accounts": 0, "finished": 0, "not_started": 0}
+            "stats": {"total": 0, "in_execution": 0, "rendering_accounts": 0, "rendering_accounts_60days": 0, "not_started": 0}
         }
 
 @router.post("/", response_model=dict)
@@ -373,9 +432,30 @@ def get_project_options(
         ).order_by(CTT010.CTT_UNIDES).all()
         units_list = [u[0] for u in units if u[0]]
         
+        # Fetch distinct analysts (from CTT_ANADES or CTT_ANALIS)
+        analysts_anades = db.query(CTT010.CTT_ANADES).distinct().filter(
+            CTT010.CTT_ANADES != None,
+            CTT010.CTT_ANADES != ""
+        ).all()
+        analysts_analis = db.query(CTT010.CTT_ANALIS).distinct().filter(
+            CTT010.CTT_ANALIS != None,
+            CTT010.CTT_ANALIS != ""
+        ).all()
+        
+        # Combine and deduplicate analysts
+        analysts_set = set()
+        for a in analysts_anades:
+            if a[0]:
+                analysts_set.add(a[0])
+        for a in analysts_analis:
+            if a[0]:
+                analysts_set.add(a[0])
+        analysts_list = sorted(list(analysts_set))
+        
         return {
             "coordinators": coordinators_list,
-            "units": units_list
+            "units": units_list,
+            "analysts": analysts_list
         }
     except Exception as e:
         print(f"Error fetching options: {e}")
@@ -393,44 +473,86 @@ def read_project(
     """
     Get specific project by Custo code.
     """
-    project = db.query(CTT010).filter(CTT010.CTT_CUSTO == custo).first()
-    if not project:
-        return {} 
+    try:
+        # Decodificar o custo caso tenha sido codificado na URL
+        from urllib.parse import unquote
+        custo_decoded = unquote(custo) if custo else ""
+        
+        # Trim o custo para remover espaços em branco
+        custo_trimmed = custo_decoded.strip() if custo_decoded else ""
+        
+        if not custo_trimmed:
+            raise HTTPException(status_code=400, detail="Código do projeto não fornecido")
+        
+        # Buscar o projeto - tenta múltiplas variações devido a possíveis espaços no banco
+        project = None
+        
+        # 1. Tenta busca exata primeiro
+        project = db.query(CTT010).filter(CTT010.CTT_CUSTO == custo_decoded).first()
+        
+        # 2. Se não encontrou, tenta com o custo trimmed
+        if not project and custo_trimmed != custo_decoded:
+            project = db.query(CTT010).filter(CTT010.CTT_CUSTO == custo_trimmed).first()
+        
+        # 3. Se ainda não encontrou, tenta busca com LIKE (ignora espaços no início/fim)
+        if not project:
+            # Busca projetos que começam ou terminam com o custo (pode ter espaços)
+            candidates = db.query(CTT010).filter(
+                CTT010.CTT_CUSTO.like(f'%{custo_trimmed}%')
+            ).all()
+            
+            # Verifica se algum projeto encontrado realmente corresponde (strip no Python)
+            for candidate in candidates:
+                if candidate.CTT_CUSTO and str(candidate.CTT_CUSTO).strip() == custo_trimmed:
+                    project = candidate
+                    break
+        
+        if not project:
+            raise HTTPException(status_code=404, detail=f"Projeto com código '{custo_trimmed}' não encontrado")
+        
+        # Usar o CTT_CUSTO do projeto encontrado para garantir consistência
+        project_custo = project.CTT_CUSTO
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Erro ao buscar projeto '{custo}': {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Erro ao buscar projeto: {str(e)}")
         
     p_dict = object_as_dict(project)
     
     # Add realized amount
-    # Realized = Sum(PAD_APAGAR + PAD_REALIZ) where length(PAD_NATURE) > 4 dígitos
-    realized = db.query(func.sum(func.coalesce(PAD010.PAD_APAGAR, 0) + func.coalesce(PAD010.PAD_REALIZ, 0)))\
-        .filter(
-            PAD010.PAD_CUSTO == custo,
-            func.length(PAD010.PAD_NATURE) > 4
-        )\
-        .scalar() or 0.0
+    # Realized = Sum(E2_VALOR) from SE2010 where E2_CUSTO matches
+    try:
+        realized = db.query(func.sum(func.coalesce(SE2010.E2_VALOR, 0)))\
+            .filter(
+                SE2010.E2_CUSTO == project_custo,
+                SE2010.D_E_L_E_T_ != '*'
+            )\
+            .scalar() or 0.0
+    except Exception as e:
+        # Se a tabela SE2010 não existir ainda, retorna 0
+        print(f"Warning: SE2010 table not available: {e}")
+        realized = 0.0
     
     # Add Budget from CTT010.CTT_SALINI
     budget = float(project.CTT_SALINI or 0.0)
     
-    # Subtrair provisões de faturamento (SC6010)
-    # Soma dos C6_PRCVEN onde C6_Serie e C8_Nota não estão vazios
-    billing_provisions = db.query(func.sum(SC6010.C6_PRCVEN))\
-        .filter(
-            SC6010.C6_CUSTO == custo,
-            SC6010.D_E_L_E_T_ != '*',
-            SC6010.C6_SERIE.isnot(None),
-            SC6010.C6_SERIE != '',
-            SC6010.C8_NOTA.isnot(None),
-            SC6010.C8_NOTA != ''
-        )\
-        .scalar() or 0.0
-    
-    # Realizado ajustado = Realizado - Provisões de Faturamento
-    realized_adjusted = float(realized) - float(billing_provisions)
-    
-    p_dict['realized'] = realized_adjusted
+    p_dict['realized'] = float(realized)
     p_dict['budget'] = budget
     p_dict['initial_balance'] = budget
-    p_dict['billing_provisions'] = float(billing_provisions)  # Provisões que foram subtraídas
+    
+    # Verificar status de finalização (opcional - pode não existir a tabela ainda)
+    try:
+        project_status = db.query(ProjectStatus).filter(ProjectStatus.CTT_CUSTO == project_custo).first()
+        p_dict['is_finalized'] = project_status.is_finalized if project_status else False
+        p_dict['finalized_at'] = project_status.finalized_at.isoformat() if project_status and project_status.finalized_at else None
+        p_dict['finalized_by'] = project_status.finalized_by if project_status else None
+    except Exception as e:
+        # Se a tabela não existir, retorna valores padrão
+        print(f"Aviso: Tabela PROJECT_STATUS não encontrada ou erro ao consultar: {str(e)}")
+        p_dict['is_finalized'] = False
+        p_dict['finalized_at'] = None
+        p_dict['finalized_by'] = None
     
     return p_dict
 
@@ -443,34 +565,68 @@ def get_project_billing(
     """
     Get billing data (faturamento) for a specific project from SC6010.
     Returns all billing entries with C6_PRCVEN where C6_Serie and C8_Nota are not empty.
+    Also returns total_provisions (all), billed (with serie and nota), and pending (without serie or nota).
     """
     # Verificar se o projeto existe
     project = db.query(CTT010).filter(CTT010.CTT_CUSTO == custo).first()
     if not project:
         raise HTTPException(status_code=404, detail="Projeto não encontrado")
     
-    # Buscar todos os registros de faturamento do projeto
-    # Filtrar apenas onde C6_Serie e C8_Nota não estão vazios
+    # 1. Total de todas as provisões (faturadas + pendentes)
+    total_provisions = db.query(func.sum(SC6010.C6_PRCVEN))\
+        .filter(
+            SC6010.C6_CUSTO == custo,
+            SC6010.D_E_L_E_T_ != '*'
+        )\
+        .scalar() or 0.0
+    
+    # 2. Provisões faturadas (com série e nota)
+    billed = db.query(func.sum(SC6010.C6_PRCVEN))\
+        .filter(
+            SC6010.C6_CUSTO == custo,
+            SC6010.D_E_L_E_T_ != '*',
+            SC6010.C6_SERIE.isnot(None),
+            SC6010.C6_SERIE != '',
+            SC6010.C6_NOTA.isnot(None),
+            SC6010.C6_NOTA != ''
+        )\
+        .scalar() or 0.0
+    
+    # 3. Provisões pendentes (sem série ou nota)
+    pending = db.query(func.sum(SC6010.C6_PRCVEN))\
+        .filter(
+            SC6010.C6_CUSTO == custo,
+            SC6010.D_E_L_E_T_ != '*',
+            or_(
+                SC6010.C6_SERIE.is_(None),
+                SC6010.C6_SERIE == '',
+                SC6010.C6_NOTA.is_(None),
+                SC6010.C6_NOTA == ''
+            )
+        )\
+        .scalar() or 0.0
+    
+    # Buscar todos os registros de faturamento do projeto (apenas faturadas)
+    # Filtrar apenas onde C6_Serie e C6_Nota não estão vazios
     billing_records = db.query(SC6010)\
         .filter(
             SC6010.C6_CUSTO == custo,
             SC6010.D_E_L_E_T_ != '*',
             SC6010.C6_SERIE.isnot(None),
             SC6010.C6_SERIE != '',
-            SC6010.C8_NOTA.isnot(None),
-            SC6010.C8_NOTA != ''
+            SC6010.C6_NOTA.isnot(None),
+            SC6010.C6_NOTA != ''
         )\
         .order_by(SC6010.C6_ITEM)\
         .all()
     
     # Converter para dicionário
     billing_list = []
-    total_billing = 0.0
+    total_billing = float(billed)  # Mantido para compatibilidade
     
     for record in billing_records:
         billing_dict = object_as_dict(record)
         billing_value = float(record.C6_PRCVEN or 0.0)
-        total_billing += billing_value
         billing_dict['C6_PRCVEN'] = billing_value
         billing_list.append(billing_dict)
     
@@ -478,8 +634,11 @@ def get_project_billing(
         "project_code": custo,
         "project_name": project.CTT_DESC01 or "",
         "billing_records": billing_list,
-        "total_billing": total_billing,
-        "count": len(billing_list)
+        "total_billing": total_billing,  # Mantido para compatibilidade (apenas faturadas)
+        "total_provisions": float(total_provisions),  # Todas as provisões
+        "billed": float(billed),  # Provisões faturadas
+        "pending": float(pending),  # Provisões pendentes
+        "count": len(billing_list)  # Quantidade de parcelas faturadas
     }
 
 # ==================== NOTES ENDPOINTS ====================
@@ -756,3 +915,63 @@ def delete_project_attachment(
     save_attachments(attachments)
     
     return {"message": "Anexo deletado com sucesso"}
+
+class ProjectFinalizationStatus(BaseModel):
+    is_finalized: bool
+
+@router.put("/{custo}/finalization-status", response_model=dict)
+def update_project_finalization_status(
+    custo: str,
+    status: ProjectFinalizationStatus,
+    db: Session = Depends(deps.get_db),
+    current_user: str = Depends(deps.get_current_user),
+) -> Any:
+    """
+    Atualiza o status de finalização do projeto.
+    Se is_finalized=True, marca o projeto como finalizado.
+    Se is_finalized=False, marca o projeto como pendente (ainda presta contas).
+    """
+    # Verificar se o projeto existe
+    project = db.query(CTT010).filter(CTT010.CTT_CUSTO == custo).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Projeto não encontrado")
+    
+    # Buscar ou criar registro de status
+    try:
+        project_status = db.query(ProjectStatus).filter(ProjectStatus.CTT_CUSTO == custo).first()
+        
+        if not project_status:
+            project_status = ProjectStatus(
+                CTT_CUSTO=custo,
+                is_finalized=status.is_finalized,
+                finalized_by=current_user if status.is_finalized else None,
+                finalized_at=datetime.now() if status.is_finalized else None
+            )
+            db.add(project_status)
+        else:
+            project_status.is_finalized = status.is_finalized
+            if status.is_finalized:
+                project_status.finalized_at = datetime.now()
+                project_status.finalized_by = current_user
+            else:
+                project_status.finalized_at = None
+                project_status.finalized_by = None
+        
+        db.commit()
+        db.refresh(project_status)
+        
+        return {
+            "message": "Status de finalização atualizado com sucesso",
+            "is_finalized": project_status.is_finalized,
+            "finalized_at": project_status.finalized_at.isoformat() if project_status.finalized_at else None,
+            "finalized_by": project_status.finalized_by
+        }
+    except Exception as e:
+        db.rollback()
+        error_msg = str(e)
+        if "PROJECT_STATUS" in error_msg or "Nome de objeto inválido" in error_msg:
+            raise HTTPException(
+                status_code=500, 
+                detail="A tabela PROJECT_STATUS não foi criada no banco de dados. Execute o script backend/scripts/create_project_status_table.sql para criar a tabela."
+            )
+        raise HTTPException(status_code=500, detail=f"Erro ao atualizar status de finalização: {str(e)}")

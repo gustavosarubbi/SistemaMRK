@@ -121,9 +121,10 @@ export function DateRangeFilter({
                             selected={dateFrom}
                             onSelect={(date) => {
                                 onDateFromChange(date);
-                                setFromOpen(false);
+                                setFromOpen(false); // Fecha imediatamente após seleção
                             }}
                             initialFocus
+                            locale={ptBR}
                         />
                     </PopoverContent>
                 </Popover>
@@ -148,9 +149,10 @@ export function DateRangeFilter({
                             selected={dateTo}
                             onSelect={(date) => {
                                 onDateToChange(date);
-                                setToOpen(false);
+                                setToOpen(false); // Fecha imediatamente após seleção
                             }}
                             initialFocus
+                            locale={ptBR}
                             disabled={(date) => dateFrom ? date < dateFrom : false}
                         />
                     </PopoverContent>
