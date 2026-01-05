@@ -1,0 +1,51 @@
+Categoria,Item,Complexidade,Horas,Taxa_Horaria_R$,Valor_R$
+Backend,Configuração e Setup,Baixa,8,120,960
+Backend,Modelos de Dados,Média,16,120,1920
+Backend,Serviço de Sincronização,Alta,40,150,6000
+Backend,API de Autenticação,Média,12,120,1440
+Backend,API de Projetos,Média,32,120,3840
+Backend,API de Dashboard,Alta,36,150,5400
+Backend,API de Movimentações,Média,28,120,3360
+Backend,API de Validação,Alta,32,150,4800
+Backend,API de Relatórios,Média,24,120,2880
+Backend,Serviços Auxiliares,Média,28,120,3360
+Backend,Sistema de Cache,Média,12,120,1440
+Backend,Testes e Debugging,-,40,100,4000
+Frontend,Setup Next.js e Configuração,Baixa,8,80,640
+Frontend,Componentes UI Base (25 componentes),Média,60,120,7200
+Frontend,Sistema de Autenticação,Média,16,120,1920
+Frontend,Página de Login,Baixa,8,80,640
+Frontend,Dashboard Principal,Alta,48,120,5760
+Frontend,Componentes de Dashboard (15+),Alta,56,120,6720
+Frontend,Página de Projetos,Alta,40,120,4800
+Frontend,Componentes de Projetos (30+),Alta,80,120,9600
+Frontend,Sistema de Filtros Avançados,Média,24,120,2880
+Frontend,Gráficos e Visualizações (8+ tipos),Alta,48,120,5760
+Frontend,Sistema de Exportação (PDF/Excel),Alta,32,120,3840
+Frontend,Página de Validação,Média,32,120,3840
+Frontend,Componentes de Validação,Média,16,120,1920
+Frontend,Gerenciamento de Estado,Média,20,120,2400
+Frontend,Hooks Customizados,Média,16,120,1920
+Frontend,Utilitários e Helpers,Baixa,12,80,960
+Frontend,Responsividade e Ajustes,Média,24,120,2880
+Frontend,Testes e Ajustes,-,40,100,4000
+Infraestrutura,Configuração de ambiente,-,8,130,1040
+Infraestrutura,Scripts de sincronização,-,12,130,1560
+Infraestrutura,Documentação técnica,-,16,100,1600
+Infraestrutura,Deploy e configuração,-,12,130,1560
+Totais,Total Geral,-,936,-,106240
+Margens,Subtotal,-,-,-,106240
+Margens,Margem de segurança (10%),-,-,-,10624
+Margens,Subtotal com margem,-,-,-,116864
+Margens,Impostos (ISS 5%),-,-,-,5843.2
+Margens,TOTAL DESENVOLVIMENTO,-,-,-,122707.2
+Manutenção,Correções de bugs (mensal),-,8,120,960
+Manutenção,Ajustes e melhorias (mensal),-,12,120,1440
+Manutenção,Suporte técnico (mensal),-,4,120,480
+Manutenção,Monitoramento e otimização (mensal),-,4,130,520
+Manutenção,Total Mensal,-,28,-,3400
+Manutenção,Total Anual (12 meses),-,-,-,40800
+Manutenção,Desconto anual (10%),-,-,-,-4080
+Manutenção,TOTAL ANUAL,-,-,-,36720
+
+

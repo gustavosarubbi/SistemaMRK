@@ -168,3 +168,4 @@ class DashboardService:
         """Obtém apenas estatísticas de status."""
         return ProjectStatusService.calculate_status_stats(db, start_date, end_date)
 
+
