@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { useAuthStore } from "@/store/authStore";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { LayoutDashboard, FolderKanban, LogOut } from "lucide-react";
+import { LayoutDashboard, FolderKanban, LogOut, ShieldCheck } from "lucide-react";
 
 export function Header() {
     const logout = useAuthStore(state => state.logout);
@@ -21,6 +21,8 @@ export function Header() {
     const navItems = [
         { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
         { href: "/dashboard/projects", label: "Projetos", icon: FolderKanban },
+        { href: "/dashboard/validation", label: "Validação", icon: ShieldCheck },
+        { href: "/dashboard/auditoria", label: "Auditoria", icon: ShieldCheck },
     ];
 
     return (
@@ -43,8 +45,8 @@ export function Header() {
                                     href={item.href}
                                     className={cn(
                                         "flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors",
-                                        isActive 
-                                            ? "bg-secondary text-secondary-foreground" 
+                                        isActive
+                                            ? "bg-secondary text-secondary-foreground"
                                             : "text-muted-foreground hover:text-primary hover:bg-secondary/50"
                                     )}
                                 >
@@ -56,8 +58,7 @@ export function Header() {
                     </nav>
                 </div>
                 <div className="flex items-center gap-4">
-                     <div className="text-sm text-muted-foreground hidden md:block">
-                        {/* Placeholder for user info if available later */}
+                    <div className="text-sm text-muted-foreground hidden md:block">
                         Olá, Admin
                     </div>
                     <Button variant="ghost" size="icon" onClick={handleLogout} title="Sair">

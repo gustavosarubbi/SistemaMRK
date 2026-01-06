@@ -18,6 +18,7 @@ const navItems = [
   { href: '/dashboard', label: 'Visão Geral', icon: LayoutDashboard },
   { href: '/dashboard/projects', label: 'Projetos', icon: FolderKanban },
   { href: '/dashboard/validation', label: 'Validação', icon: ShieldCheck },
+  { href: '/dashboard/auditoria', label: 'Auditoria', icon: ShieldCheck },
 ] as const;
 
 const actionItems = [
@@ -46,8 +47,8 @@ const NavItem = memo(function NavItem({
       onClick={onClick}
       className={cn(
         "flex items-center gap-3 px-3 py-2.5 text-sm font-medium rounded-md transition-colors duration-150 group",
-        isActive 
-          ? "bg-primary/10 text-primary font-semibold" 
+        isActive
+          ? "bg-primary/10 text-primary font-semibold"
           : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
       )}
     >
@@ -65,9 +66,9 @@ export const Sidebar = memo(function Sidebar({ isOpen = false, onClose }: Sideba
   const logout = useAuthStore((state) => state.logout);
   const [isHovered, setIsHovered] = useState(false);
   const sidebarRef = useRef<HTMLElement>(null);
-  
+
   const sidebarOpen = useMemo(() => isOpen || isHovered, [isOpen, isHovered]);
-  
+
   // Memoizar classes CSS para evitar recálculos
   const asideClasses = useMemo(() => cn(
     "hidden md:flex flex-col border-r bg-card h-screen fixed top-0 left-0 overflow-hidden shadow-lg z-40",
@@ -84,7 +85,7 @@ export const Sidebar = memo(function Sidebar({ isOpen = false, onClose }: Sideba
       setIsHovered(false);
     }
   }, [isOpen]);
-  
+
   const handleLinkClick = useCallback(() => {
     if (onClose && isOpen) {
       onClose();
@@ -102,7 +103,7 @@ export const Sidebar = memo(function Sidebar({ isOpen = false, onClose }: Sideba
   }, []);
 
   // Memoizar itens de navegação para evitar re-renders
-  const navItemsMemo = useMemo(() => 
+  const navItemsMemo = useMemo(() =>
     navItems.map((item) => ({
       ...item,
       isActive: pathname === item.href,
@@ -110,7 +111,7 @@ export const Sidebar = memo(function Sidebar({ isOpen = false, onClose }: Sideba
     [pathname]
   );
 
-  const actionItemsMemo = useMemo(() => 
+  const actionItemsMemo = useMemo(() =>
     actionItems.map((item) => ({
       ...item,
       isActive: pathname === item.href,
@@ -119,7 +120,7 @@ export const Sidebar = memo(function Sidebar({ isOpen = false, onClose }: Sideba
   );
 
   return (
-    <aside 
+    <aside
       ref={sidebarRef}
       className={asideClasses}
       style={{ width: '256px' }}
@@ -213,7 +214,7 @@ export const Sidebar = memo(function Sidebar({ isOpen = false, onClose }: Sideba
               </p>
             </div>
           </div>
-          
+
           <button
             onClick={handleLogout}
             className="flex w-full items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-destructive hover:bg-destructive/10 rounded-md transition-colors duration-150 border border-transparent hover:border-destructive/20"

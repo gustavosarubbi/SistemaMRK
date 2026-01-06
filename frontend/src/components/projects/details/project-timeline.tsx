@@ -69,19 +69,19 @@ export function ProjectTimeline({ startDate, endDate, className, isFinalized = f
     }
 
     return (
-        <div className={cn("space-y-2", className)}>
-            <div className="flex items-center justify-between text-xs text-muted-foreground">
-                <div className="flex items-center gap-1">
-                    <Calendar className="h-3 w-3" />
+        <div className={cn("space-y-2.5", className)}>
+            <div className="flex items-center justify-between text-sm font-bold text-slate-600">
+                <div className="flex items-center gap-1.5">
+                    <Calendar className="h-4 w-4" />
                     <span>{formatDate(startDate)}</span>
                 </div>
-                <div className="flex items-center gap-1">
-                    <Calendar className="h-3 w-3" />
+                <div className="flex items-center gap-1.5">
+                    <Calendar className="h-4 w-4" />
                     <span>{formatDate(endDate)}</span>
                 </div>
             </div>
-            
-            <div className="relative h-2 bg-muted rounded-full overflow-hidden">
+
+            <div className="relative h-3 bg-muted rounded-full overflow-hidden">
                 <div
                     className={cn("absolute h-full rounded-full transition-all duration-500", statusColor)}
                     style={{ width: `${progress}%` }}
@@ -93,14 +93,14 @@ export function ProjectTimeline({ startDate, endDate, className, isFinalized = f
                     />
                 ) : null}
             </div>
-            
+
             <p className={cn(
-                "text-xs text-center font-medium",
-                status === 'overdue' && "text-red-600",
-                status === 'ending_soon' && "text-orange-600",
-                status === 'in_progress' && "text-green-600",
-                status === 'finished' && "text-muted-foreground",
-                status === 'not_started' && "text-muted-foreground"
+                "text-sm text-center font-bold",
+                status === 'overdue' && "text-red-700",
+                status === 'ending_soon' && "text-orange-700",
+                status === 'in_progress' && "text-green-700",
+                status === 'finished' && "text-slate-500",
+                status === 'not_started' && "text-slate-500"
             )}>
                 {statusText}
             </p>

@@ -18,7 +18,10 @@ def verificar_e_criar_indices():
     
     # Índices necessários para performance
     indices_necessarios = {
-        "PAD010": ["PAD_CUSTO"]
+        "PAD010": ["PAD_CUSTO", "PAD_CHECK"],
+        "CTT010": ["CTT_CUSTO", "CTT_DTINI", "CTT_DTFIM", "CTT_DESC01"],
+        "SE2010": ["E2_CUSTO", "D_E_L_E_T_", "E2_VENCTO"],
+        "SC6010": ["C6_CUSTO", "D_E_L_E_T_", "C6_ENTREG"]
     }
     
     for table_name, columns in indices_necessarios.items():

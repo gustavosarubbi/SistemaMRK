@@ -74,3 +74,28 @@ def get_db_validated():
     finally:
         db.close()
 
+# Audit Database (Auditoria - Read/Write)
+# Allow engine creation even if credentials are missing - will fail on actual connection
+engine_audit = create_engine(
+    settings.SQLALCHEMY_DATABASE_URI_AUDIT, 
+    pool_pre_ping=True,
+    pool_size=10,
+    max_overflow=20,
+    use_insertmanyvalues=False 
+)
+
+# Enable fast_executemany for pyodbc
+@event.listens_for(engine_audit, "before_cursor_execute")
+def receive_before_cursor_execute_audit(conn, cursor, statement, params, context, executemany):
+    if executemany:
+        cursor.fast_executemany = True
+
+SessionAudit = sessionmaker(autocommit=False, autoflush=False, bind=engine_audit)
+
+def get_db_audit():
+    db = SessionAudit()
+    try:
+        yield db
+    finally:
+        db.close()
+

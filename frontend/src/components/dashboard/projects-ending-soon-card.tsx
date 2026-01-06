@@ -3,6 +3,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AlertTriangle, ArrowRight, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useRouter } from "next/navigation";
 import { ProjectListItem } from "@/types";
 import { formatDaysRemaining } from "@/lib/date-utils";
@@ -13,19 +14,44 @@ interface ProjectsEndingSoonCardProps {
     projects?: ProjectListItem[];
     limit?: number;
     onViewAll?: () => void;
+    isLoading?: boolean;
 }
 
-export function ProjectsEndingSoonCard({ 
-    count, 
-    projects = [], 
+export function ProjectsEndingSoonCard({
+    count,
+    projects = [],
     limit = 5,
-    onViewAll 
+    onViewAll,
+    isLoading = false
 }: ProjectsEndingSoonCardProps) {
     const router = useRouter();
-    
+
+    // Loading State
+    if (isLoading) {
+        return (
+            <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium text-muted-foreground">
+                        Finalizando em Breve
+                    </CardTitle>
+                    <Skeleton className="h-8 w-8 rounded-full" />
+                </CardHeader>
+                <CardContent>
+                    <Skeleton className="h-9 w-16 mb-2" />
+                    <Skeleton className="h-4 w-32 mb-4" />
+                    <div className="space-y-2 mb-4">
+                        {[1, 2, 3].map((i) => (
+                            <Skeleton key={i} className="h-12 w-full" />
+                        ))}
+                    </div>
+                </CardContent>
+            </Card>
+        );
+    }
+
     const displayedProjects = projects.slice(0, limit);
     const hasMore = projects.length > limit;
-    
+
     const handleViewAll = () => {
         if (onViewAll) {
             onViewAll();
@@ -33,7 +59,7 @@ export function ProjectsEndingSoonCard({
             router.push('/dashboard/projects?status=in_execution&sort=days_remaining&filter=ending_soon');
         }
     };
-    
+
     return (
         <Card className="hover:shadow-md transition-shadow">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -49,16 +75,16 @@ export function ProjectsEndingSoonCard({
                 <p className="text-xs text-muted-foreground mb-4">
                     Projetos finalizando nos próximos 30 dias
                 </p>
-                
+
                 {displayedProjects.length > 0 && (
                     <div className="space-y-2 mb-4">
                         {displayedProjects.map((project) => {
                             const isUrgent = project.daysRemaining !== null && project.daysRemaining <= 7;
                             const isCritical = project.daysRemaining !== null && project.daysRemaining <= 0;
-                            
+
                             return (
-                                <div 
-                                    key={project.id} 
+                                <div
+                                    key={project.id}
                                     className={cn(
                                         "flex items-center justify-between text-sm p-2 rounded-md border",
                                         isCritical && "bg-red-50 border-red-200",
@@ -71,7 +97,7 @@ export function ProjectsEndingSoonCard({
                                         <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
                                             <Clock className="h-3 w-3" />
                                             <span>
-                                                {project.daysRemaining !== null 
+                                                {project.daysRemaining !== null
                                                     ? formatDaysRemaining(project.daysRemaining)
                                                     : 'Data não definida'}
                                             </span>
@@ -87,16 +113,16 @@ export function ProjectsEndingSoonCard({
                         })}
                     </div>
                 )}
-                
+
                 {(hasMore || displayedProjects.length === 0) && (
-                    <Button 
-                        variant="outline" 
-                        size="sm" 
+                    <Button
+                        variant="outline"
+                        size="sm"
                         className="w-full"
                         onClick={handleViewAll}
                     >
-                        {displayedProjects.length === 0 
-                            ? 'Ver projetos' 
+                        {displayedProjects.length === 0
+                            ? 'Ver projetos'
                             : `Ver todos (${count})`}
                         <ArrowRight className="h-3 w-3 ml-1" />
                     </Button>

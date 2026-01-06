@@ -37,6 +37,9 @@ class Settings:
     # Database Local Validated (Dados Validados)
     LOCAL_DB_NAME_VALIDATED = os.getenv("LOCAL_DB_NAME_VALIDATED", "SistemaMRK_Validated")
     
+    # Database Audit (Auditoria)
+    LOCAL_DB_NAME_AUDIT = os.getenv("LOCAL_DB_NAME_AUDIT", "SistemaMRK_Audit")
+    
     # Admin Simple Auth
     ADMIN_USER = os.getenv("ADMIN_USER", "admin")
     ADMIN_PASS = os.getenv("ADMIN_PASS", "admin")
@@ -120,6 +123,36 @@ class Settings:
             
         driver = "ODBC Driver 17 for SQL Server"
         params = f"DRIVER={{{driver}}};SERVER={self.LOCAL_DB_SERVER},{self.LOCAL_DB_PORT};DATABASE={self.LOCAL_DB_NAME_VALIDATED};UID={self.LOCAL_DB_USER};PWD={self.LOCAL_DB_PASSWORD}"
+        
+        if self.LOCAL_DB_ENCRYPT:
+            params += ";Encrypt=yes"
+        else:
+            params += ";Encrypt=no"
+            
+        if self.LOCAL_DB_TRUST_SERVER_CERTIFICATE:
+            params += ";TrustServerCertificate=yes"
+            
+        return f"mssql+pyodbc:///?odbc_connect={params}"
+
+
+    @property
+    def SQLALCHEMY_DATABASE_URI_AUDIT(self) -> str:
+        if not self.LOCAL_DB_SERVER:
+            return "sqlite:///./audit.db"
+        
+        # Validate required credentials - but allow None for optional development
+        if not self.LOCAL_DB_USER or not self.LOCAL_DB_PASSWORD:
+            logger.warning(
+                "LOCAL_DB_USER and/or LOCAL_DB_PASSWORD are not set. "
+                "Audit database connections will fail. Please set these in your .env file."
+            )
+            # Return a connection string that will fail gracefully
+            driver = "ODBC Driver 17 for SQL Server"
+            params = f"DRIVER={{{driver}}};SERVER={self.LOCAL_DB_SERVER},{self.LOCAL_DB_PORT};DATABASE={self.LOCAL_DB_NAME_AUDIT};UID=None;PWD=None"
+            return f"mssql+pyodbc:///?odbc_connect={params}"
+            
+        driver = "ODBC Driver 17 for SQL Server"
+        params = f"DRIVER={{{driver}}};SERVER={self.LOCAL_DB_SERVER},{self.LOCAL_DB_PORT};DATABASE={self.LOCAL_DB_NAME_AUDIT};UID={self.LOCAL_DB_USER};PWD={self.LOCAL_DB_PASSWORD}"
         
         if self.LOCAL_DB_ENCRYPT:
             params += ";Encrypt=yes"

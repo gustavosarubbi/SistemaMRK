@@ -1,10 +1,8 @@
-"use client"
-
 import { PrimaryKPIs } from "../kpis/primary-kpis";
 import { SecondaryKPIs } from "../kpis/secondary-kpis";
 import { ProjectsInExecutionCard } from "../projects-in-execution-card";
 import { ProjectsEndingSoonCard } from "../projects-ending-soon-card";
-import { useDashboardKPIs, useDashboardProjects } from "@/hooks/use-dashboard-data";
+import { DashboardData } from "@/types";
 import { useProjectsSidebar } from "@/hooks/use-projects-sidebar";
 import { useMemo } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -13,35 +11,42 @@ import { Card } from "@/components/ui/card";
 interface OverviewSectionProps {
     projectsLimit: number;
     onProjectsLimitChange: (limit: number) => void;
+    data: DashboardData | undefined;
+    isLoading: boolean;
+    projectsLoading?: boolean;
 }
 
 /**
  * Seção de Visão Geral do Dashboard.
  * Mostra KPIs principais (3-5) e cards de projetos.
  */
-export function OverviewSection({ 
-    projectsLimit, 
-    onProjectsLimitChange 
+export function OverviewSection({
+    projectsLimit,
+    onProjectsLimitChange,
+    data,
+    isLoading,
+    projectsLoading = false
 }: OverviewSectionProps) {
-    const { data: kpisData, isLoading: kpisLoading } = useDashboardKPIs();
-    const { data: projectsData, isLoading: projectsLoading } = useDashboardProjects(projectsLimit);
+    const kpisData = data?.kpis;
     const sidebar = useProjectsSidebar();
-    
+
+
+
     const limitedProjectsInExecution = useMemo(() => {
-        if (!projectsData?.projects_in_execution) return [];
-        return projectsLimit === -1 
-            ? projectsData.projects_in_execution 
-            : projectsData.projects_in_execution.slice(0, projectsLimit);
-    }, [projectsData?.projects_in_execution, projectsLimit]);
-    
+        if (!data?.projects_in_execution) return [];
+        return projectsLimit === -1
+            ? data.projects_in_execution
+            : data.projects_in_execution.slice(0, projectsLimit);
+    }, [data?.projects_in_execution, projectsLimit]);
+
     const limitedProjectsEndingSoon = useMemo(() => {
-        if (!projectsData?.projects_ending_soon) return [];
-        return projectsLimit === -1 
-            ? projectsData.projects_ending_soon 
-            : projectsData.projects_ending_soon.slice(0, projectsLimit);
-    }, [projectsData?.projects_ending_soon, projectsLimit]);
-    
-    if (kpisLoading || projectsLoading) {
+        if (!data?.projects_ending_soon) return [];
+        return projectsLimit === -1
+            ? data.projects_ending_soon
+            : data.projects_ending_soon.slice(0, projectsLimit);
+    }, [data?.projects_ending_soon, projectsLimit]);
+
+    if (isLoading && !data) {
         return (
             <div className="space-y-6">
                 <div className="grid gap-4 md:grid-cols-3">
@@ -67,7 +72,7 @@ export function OverviewSection({
             </div>
         );
     }
-    
+
     if (!kpisData) {
         return (
             <div className="text-center py-8 text-muted-foreground">
@@ -75,31 +80,32 @@ export function OverviewSection({
             </div>
         );
     }
-    
+
     return (
         <div className="space-y-6">
             {/* KPIs Principais */}
             <PrimaryKPIs kpis={kpisData} />
-            
+
             {/* KPIs Secundários (Expandível) */}
             <SecondaryKPIs kpis={kpisData} />
-            
+
             {/* Cards de Projetos */}
             <div className="grid gap-4 md:grid-cols-2">
                 <ProjectsInExecutionCard
-                    count={kpisData.in_execution || 0}
+                    count={kpisData?.in_execution || 0}
                     projects={limitedProjectsInExecution}
                     limit={projectsLimit}
                     onViewAll={() => sidebar.openSidebar('in_execution')}
+                    isLoading={projectsLoading}
                 />
                 <ProjectsEndingSoonCard
-                    count={kpisData.ending_soon || 0}
+                    count={kpisData?.ending_soon || 0}
                     projects={limitedProjectsEndingSoon}
                     limit={projectsLimit}
                     onViewAll={() => sidebar.openSidebar('ending_soon')}
+                    isLoading={projectsLoading}
                 />
             </div>
         </div>
     );
 }
-
