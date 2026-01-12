@@ -105,22 +105,68 @@ def read_projects(
                 print(f"Aviso: Erro ao consultar projetos finalizados: {str(e)}")
             
             if status == 'in_execution':
-                # Vigencia: Start <= Today <= End
-                query = query.filter(CTT010.CTT_DTINI <= today, CTT010.CTT_DTFIM >= today)
-            elif status == 'rendering_accounts':
-                # Prestar Contas: Todos os projetos que já terminaram (End < Today)
-                # EXCETO os que foram finalizados
-                query = query.filter(CTT010.CTT_DTFIM < today)
+                # Em Execução: No período de vigência E não finalizado internamente
+                # O usuário solicitou que Vigência tenha prioridade sobre Encerrado ERP.
+                query = query.filter(
+                    CTT010.CTT_DTINI <= today, 
+                    CTT010.CTT_DTFIM >= today
+                )
+                # Excluir apenas os finalizados internamente (que é um status "forçado")
                 if finalized_custos_list:
                     query = query.filter(~CTT010.CTT_CUSTO.in_(finalized_custos_list))
+
+            elif status == 'rendering_accounts':
+                # Prestar Contas: Já terminou (End < Today) E não encerrado nem finalizado
+                query = query.filter(CTT010.CTT_DTFIM < today)
+                # Excluir encerrados
+                query = query.filter(
+                    or_(
+                        CTT010.CTT_DTENC.is_(None),
+                        CTT010.CTT_DTENC == '',
+                        func.len(CTT010.CTT_DTENC) != 8,
+                        CTT010.CTT_DTENC > today
+                    )
+                )
+                # Excluir finalizados
+                if finalized_custos_list:
+                    query = query.filter(~CTT010.CTT_CUSTO.in_(finalized_custos_list))
+
             elif status == 'rendering_accounts_60days':
-                # Prazo de 60 Dias: Projetos encerrados há menos de 60 dias
-                # EXCETO os que foram finalizados
+                # Prazo 60 Dias: Terminados há menos de 60 dias E não encerrados nem finalizados
                 sixty_days_ago = (today_dt - timedelta(days=60)).strftime("%Y%m%d")
                 query = query.filter(
                     CTT010.CTT_DTFIM < today,
                     CTT010.CTT_DTFIM >= sixty_days_ago
                 )
+                # Excluir encerrados
+                query = query.filter(
+                    or_(
+                        CTT010.CTT_DTENC.is_(None),
+                        CTT010.CTT_DTENC == '',
+                        func.len(CTT010.CTT_DTENC) != 8,
+                        CTT010.CTT_DTENC > today
+                    )
+                )
+                # Excluir finalizados
+                if finalized_custos_list:
+                    query = query.filter(~CTT010.CTT_CUSTO.in_(finalized_custos_list))
+            elif status == 'closed' or status == 'encerrado':
+                # Encerrados: Tem CTT_DTENC <= hoje E não finalizado internamente
+                # E NÃO está no período de vigência (pois vigência tem prioridade)
+                query = query.filter(
+                    CTT010.CTT_DTENC.isnot(None),
+                    CTT010.CTT_DTENC != '',
+                    func.len(CTT010.CTT_DTENC) == 8,
+                    CTT010.CTT_DTENC <= today
+                )
+                # Excluir os que ainda estão em vigência
+                query = query.filter(
+                    or_(
+                        func.trim(CTT010.CTT_DTINI) > today,
+                        func.trim(CTT010.CTT_DTFIM) < today
+                    )
+                )
+                # Excluir finalizados para não duplicar
                 if finalized_custos_list:
                     query = query.filter(~CTT010.CTT_CUSTO.in_(finalized_custos_list))
             elif status == 'finished':
@@ -237,28 +283,45 @@ def read_projects(
         # Calculate stats using SQL aggregation (much faster than Python loops)
         total_count = stats_query.count()
         
-        # In execution: start <= today <= end
+        # In execution: start <= today <= end (WITHOUT excluding ERP closed, as requested)
+        # Excludes only internally finalized
         in_execution_query = stats_query.filter(
             CTT010.CTT_DTINI <= today_str,
             CTT010.CTT_DTFIM >= today_str
         )
+        if finalized_custos:
+             in_execution_query = in_execution_query.filter(~CTT010.CTT_CUSTO.in_(list(finalized_custos)))
         in_execution_count = in_execution_query.count()
         
         # Not started: start > today
         not_started_query = stats_query.filter(CTT010.CTT_DTINI > today_str)
         not_started_count = not_started_query.count()
         
-        # Rendering accounts: end < today AND not finalized
-        rendering_query = stats_query.filter(CTT010.CTT_DTFIM < today_str)
+        # Rendering accounts: end < today AND not finalized AND not closed (CTT_DTENC > hoje ou vazio)
+        rendering_query = stats_query.filter(
+            CTT010.CTT_DTFIM < today_str,
+            or_(
+                CTT010.CTT_DTENC.is_(None),
+                CTT010.CTT_DTENC == '',
+                func.len(CTT010.CTT_DTENC) != 8,
+                CTT010.CTT_DTENC > today_str
+            )
+        )
         rendering_projects = rendering_query.with_entities(CTT010.CTT_CUSTO).all()
         rendering_custos = {str(p.CTT_CUSTO).strip() for p in rendering_projects if p.CTT_CUSTO}
         non_finalized_rendering = rendering_custos - finalized_custos
         rendering_accounts_count = len(non_finalized_rendering)
         
-        # Rendering accounts 60 days: ended in last 60 days AND not finalized
+        # Rendering accounts 60 days: ended in last 60 days AND not finalized AND not closed (CTT_DTENC > hoje ou vazio)
         rendering_60days_query = stats_query.filter(
             CTT010.CTT_DTFIM < today_str,
-            CTT010.CTT_DTFIM >= sixty_days_ago_str
+            CTT010.CTT_DTFIM >= sixty_days_ago_str,
+            or_(
+                CTT010.CTT_DTENC.is_(None),
+                CTT010.CTT_DTENC == '',
+                func.len(CTT010.CTT_DTENC) != 8,
+                CTT010.CTT_DTENC > today_str
+            )
         )
         rendering_60days_projects = rendering_60days_query.with_entities(CTT010.CTT_CUSTO).all()
         rendering_60days_custos = {str(p.CTT_CUSTO).strip() for p in rendering_60days_projects if p.CTT_CUSTO}
@@ -269,13 +332,29 @@ def read_projects(
         finalized_query = stats_query.filter(CTT010.CTT_CUSTO.in_(list(finalized_custos))) if finalized_custos else stats_query.filter(False)
         finalized_count = finalized_query.count() if finalized_custos else 0
         
+        # Closed count: CTT_DTENC <= today - EXCLUDING in execution and finalized
+        closed_query = stats_query.filter(
+            CTT010.CTT_DTENC.isnot(None),
+            CTT010.CTT_DTENC != '',
+            func.len(CTT010.CTT_DTENC) == 8,
+            CTT010.CTT_DTENC <= today_str,
+            or_(
+                func.trim(CTT010.CTT_DTINI) > today_str,
+                func.trim(CTT010.CTT_DTFIM) < today_str
+            )
+        )
+        if finalized_custos:
+            closed_query = closed_query.filter(~CTT010.CTT_CUSTO.in_(list(finalized_custos)))
+        closed_count = closed_query.count()
+        
         stats = {
             "total": total_count,
             "in_execution": in_execution_count,
             "rendering_accounts": rendering_accounts_count,
             "rendering_accounts_60days": rendering_accounts_60days_count,
             "not_started": not_started_count,
-            "finalized": finalized_count
+            "finalized": finalized_count,
+            "closed": closed_count
         }
             
         # Get total count for pagination (for the main query)

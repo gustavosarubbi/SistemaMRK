@@ -15,9 +15,9 @@ import { ArrowRight, Clock, Eye, ExternalLink } from "lucide-react"
 import Link from "next/link"
 import { cn } from "@/lib/utils"
 import { getProjectClassification, getServiceType, getProjectAnalyst } from "@/lib/project-mappings"
-import { 
-    getDaysRemaining, 
-    getUrgencyLevel, 
+import {
+    getDaysRemaining,
+    getUrgencyLevel,
     formatDaysRemaining,
     getDaysRemainingForAccountRendering,
     getDaysSinceEnd,
@@ -33,30 +33,43 @@ const formatDate = (dateStr: string): string => {
 }
 
 // Badge de vigência
-const getVigenciaBadge = (dtIni: string, dtFim: string, isFinalized?: boolean) => {
+const getVigenciaBadge = (dtIni: string, dtFim: string, cttDtenc?: string) => {
     if (!dtIni || !dtFim || dtIni.length !== 8 || dtFim.length !== 8) return null
-    
+
     const today = new Date()
     today.setHours(0, 0, 0, 0)
-    
+
     const start = new Date(Number(dtIni.substring(0, 4)), Number(dtIni.substring(4, 6)) - 1, Number(dtIni.substring(6, 8)))
     const end = new Date(Number(dtFim.substring(0, 4)), Number(dtFim.substring(4, 6)) - 1, Number(dtFim.substring(6, 8)))
-    
+
+    // Verificar se tem data de encerramento válida
+    const hasEncerramento = cttDtenc && cttDtenc.trim().length === 8
+
     const endPlus60 = new Date(end)
     endPlus60.setDate(endPlus60.getDate() + 60)
-    
-    if (today >= start && today <= end) {
-        return <Badge variant="success" className="text-[10px] h-5 px-1.5 whitespace-nowrap">Em Execução</Badge>
-    } else if (today > end && today <= endPlus60) {
-        return <Badge variant="warning" className="text-[10px] h-5 px-1.5 whitespace-nowrap">Prestar Contas</Badge>
-    } else if (today > endPlus60) {
-        // Se foi validado como finalizado, mostra "Finalizado", senão "Pendente"
-        return <Badge variant="secondary" className="text-[10px] h-5 px-1.5 whitespace-nowrap">
-            {isFinalized ? 'Finalizado' : 'Pendente'}
-        </Badge>
-    } else {
+
+    // 1. Não Iniciado
+    if (today < start) {
         return <Badge variant="outline" className="text-[10px] h-5 px-1.5 whitespace-nowrap">Não Iniciado</Badge>
     }
+
+    // 2. Em Execução (Prioridade sobre Encerrado ERP)
+    if (today <= end) {
+        return <Badge variant="success" className="text-[10px] h-5 px-1.5 whitespace-nowrap">Em Execução</Badge>
+    }
+
+    // 3. Encerrado (Somente se não estiver em execução)
+    if (hasEncerramento) {
+        return <Badge variant="secondary" className="text-[10px] h-5 px-1.5 whitespace-nowrap">Encerrado</Badge>
+    }
+
+    // 4. Prestar Contas (Até 60 dias após o fim e sem CTT_DTENC)
+    if (today <= endPlus60) {
+        return <Badge variant="warning" className="text-[10px] h-5 px-1.5 whitespace-nowrap">Prestar Contas</Badge>
+    }
+
+    // 5. Pendente (Mais de 60 dias após o fim e sem CTT_DTENC)
+    return <Badge variant="secondary" className="text-[10px] h-5 px-1.5 whitespace-nowrap">Pendente</Badge>
 }
 
 // Badge de status financeiro
@@ -81,11 +94,7 @@ export const projectColumns: ColumnDef<Project>[] = [
                 <Checkbox
                     checked={table.getIsAllPageRowsSelected()}
                     indeterminate={table.getIsSomePageRowsSelected() && !table.getIsAllPageRowsSelected()}
-                    onChange={(e) => {
-                        e.stopPropagation()
-                        table.toggleAllPageRowsSelected(e.target.checked)
-                    }}
-                    onClick={(e) => e.stopPropagation()}
+                    onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
                     aria-label="Selecionar todos"
                 />
             </div>
@@ -94,10 +103,7 @@ export const projectColumns: ColumnDef<Project>[] = [
             <div onClick={(e) => e.stopPropagation()}>
                 <Checkbox
                     checked={row.getIsSelected()}
-                    onChange={(e) => {
-                        e.stopPropagation()
-                        row.toggleSelected(e.target.checked)
-                    }}
+                    onCheckedChange={(value) => row.toggleSelected(!!value)}
                     onClick={(e) => e.stopPropagation()}
                     aria-label="Selecionar linha"
                 />
@@ -114,13 +120,13 @@ export const projectColumns: ColumnDef<Project>[] = [
         cell: ({ row }) => {
             const project = row.original
             return (
-                <Link 
+                <Link
                     href={`/dashboard/projects/${encodeURIComponent(project.CTT_CUSTO)}`}
                     onClick={(e) => e.stopPropagation()}
                 >
-                    <Button 
-                        variant="ghost" 
-                        size="icon" 
+                    <Button
+                        variant="ghost"
+                        size="icon"
                         className="h-7 w-7 hover:bg-primary hover:text-primary-foreground transition-colors"
                         title="Ver Detalhes do Projeto"
                     >
@@ -149,7 +155,7 @@ export const projectColumns: ColumnDef<Project>[] = [
         cell: ({ row }) => {
             const project = row.original
             return (
-                <Link 
+                <Link
                     href={`/dashboard/projects/${encodeURIComponent(project.CTT_CUSTO)}`}
                     className="block hover:opacity-80 transition-opacity"
                     onClick={(e) => e.stopPropagation()}
@@ -195,8 +201,8 @@ export const projectColumns: ColumnDef<Project>[] = [
                 return variants[code] || 'outline';
             };
             return (
-                <Badge 
-                    variant={getVariant(code)} 
+                <Badge
+                    variant={getVariant(code)}
                     className="text-xs px-2 py-1 font-semibold whitespace-nowrap"
                 >
                     {classification}
@@ -229,8 +235,8 @@ export const projectColumns: ColumnDef<Project>[] = [
                 return variants[code] || 'outline';
             };
             return (
-                <Badge 
-                    variant={getVariant(code)} 
+                <Badge
+                    variant={getVariant(code)}
                     className="text-xs px-2 py-1 font-semibold whitespace-nowrap"
                 >
                     {serviceType}
@@ -248,10 +254,10 @@ export const projectColumns: ColumnDef<Project>[] = [
             const project = row.original
             return (
                 <div className="text-xs whitespace-nowrap">
-                    {formatDate(project.CTT_DTINI)} <br/> 
+                    {formatDate(project.CTT_DTINI)} <br />
                     <span className="text-muted-foreground text-[10px]">até</span> {formatDate(project.CTT_DTFIM)}
                     <div className="mt-1">
-                        {getVigenciaBadge(project.CTT_DTINI, project.CTT_DTFIM, project.is_finalized)}
+                        {getVigenciaBadge(project.CTT_DTINI, project.CTT_DTFIM, project.CTT_DTENC)}
                     </div>
                 </div>
             )
@@ -284,7 +290,7 @@ export const projectColumns: ColumnDef<Project>[] = [
             const urgencyLevel = getUrgencyLevel(project)
             const projectInExecution = isInExecution(project.CTT_DTINI, project.CTT_DTFIM)
             const projectNotStarted = isNotStarted(project.CTT_DTINI)
-            
+
             // Só mostra se está em execução ou não iniciado
             if (projectNotStarted && daysRemaining !== null && daysRemaining > 0) {
                 return (
@@ -299,7 +305,7 @@ export const projectColumns: ColumnDef<Project>[] = [
                     </div>
                 )
             }
-            
+
             if (projectInExecution && daysRemaining !== null && daysRemaining >= 0) {
                 return (
                     <div className="flex items-center gap-2">
@@ -318,7 +324,7 @@ export const projectColumns: ColumnDef<Project>[] = [
                     </div>
                 )
             }
-            
+
             // Se já passou da vigência, não mostra nada (mostra na coluna de prestação)
             return <span className="text-xs text-muted-foreground">-</span>
         },
@@ -334,19 +340,19 @@ export const projectColumns: ColumnDef<Project>[] = [
             const daysSinceEnd = getDaysSinceEnd(project.CTT_DTFIM)
             const isRendering = isInRenderingAccountsPeriod(project.CTT_DTFIM)
             const renderingDaysRemaining = getDaysRemainingForAccountRendering(project.CTT_DTFIM)
-            
+
             // Só mostra se está em período de prestação de contas
             if (!isRendering || daysSinceEnd === 0) {
                 return <span className="text-xs text-muted-foreground">-</span>
             }
-            
+
             return (
                 <div className="text-xs">
                     <div className={cn(
                         "font-medium flex items-center gap-1",
-                        renderingDaysRemaining !== null && renderingDaysRemaining <= 15 ? "text-red-600" : 
-                        renderingDaysRemaining !== null && renderingDaysRemaining <= 30 ? "text-orange-600" : 
-                        "text-amber-600"
+                        renderingDaysRemaining !== null && renderingDaysRemaining <= 15 ? "text-red-600" :
+                            renderingDaysRemaining !== null && renderingDaysRemaining <= 30 ? "text-orange-600" :
+                                "text-amber-600"
                     )}>
                         <Clock className="h-3 w-3" />
                         {renderingDaysRemaining !== null ? (
@@ -465,7 +471,7 @@ export const columnLabels: Record<string, string> = {
  */
 export function getRowUrgencyClass(project: Project): string {
     const urgencyLevel = getUrgencyLevel(project)
-    
+
     switch (urgencyLevel) {
         case 4:
             return 'bg-red-50/50 hover:bg-red-100/50'

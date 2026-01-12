@@ -61,7 +61,7 @@ export interface DashboardData {
     projects_ending_soon?: ProjectListItem[];
 }
 
-export type TimeRangePreset = 
+export type TimeRangePreset =
     | 'custom'
     | 'last30'
     | 'last90'
@@ -80,6 +80,7 @@ export interface Project {
     CTT_UNIDES: string;
     CTT_DTINI: string;
     CTT_DTFIM: string;
+    CTT_DTENC?: string;
     CTT_SALINI: number;
     budget: number;
     CTT_CLASSE?: string;
@@ -93,9 +94,6 @@ export interface Project {
     realized?: number;
     usage_percent?: number;
     initial_balance?: number;
-    is_finalized?: boolean;
-    finalized_at?: string;
-    finalized_by?: string;
 }
 
 export interface ProjectStats {
@@ -104,7 +102,7 @@ export interface ProjectStats {
     rendering_accounts: number;
     rendering_accounts_60days: number;
     not_started: number;
-    finalized: number;
+    closed?: number;
 }
 
 export interface PaginatedResponse<T> {
@@ -128,7 +126,7 @@ export interface ProjectFilters {
 }
 
 // Faixas de dias restantes
-export type DaysRemainingRange = 
+export type DaysRemainingRange =
     | 'all'           // Todos
     | 'today'         // Vence hoje
     | 'week'          // Próximos 7 dias
@@ -139,7 +137,7 @@ export type DaysRemainingRange =
     | 'custom';       // Range customizado
 
 // Faixas de execução financeira
-export type ExecutionRange = 
+export type ExecutionRange =
     | 'all'           // Todos
     | 'low'           // 0-50%
     | 'medium'        // 50-85%
@@ -148,7 +146,7 @@ export type ExecutionRange =
     | 'custom';       // Range customizado
 
 // Presets de filtros
-export type FilterPreset = 
+export type FilterPreset =
     | 'all'                  // Todos os projetos
     | 'critical'             // Projetos críticos
     | 'urgent_attention'     // Atenção urgente
@@ -164,14 +162,11 @@ export type UrgencyLevel = 0 | 1 | 2 | 3 | 4;
 
 // Filtros avançados extendidos
 export interface AdvancedProjectFilters extends ProjectFilters {
-    // Filtros de vigência (removido daysRemainingRange)
+    // Filtros de vigência
     vigenciaDaysRange?: DaysRemainingRange;
     vigenciaDaysMin?: number;
     vigenciaDaysMax?: number;
-    // Filtros de prestação de contas
-    renderingDaysRange?: DaysRemainingRange;
-    renderingDaysMin?: number;
-    renderingDaysMax?: number;
+    // Filtros de execução financeira
     executionRange?: ExecutionRange;
     executionMin?: number;
     executionMax?: number;
@@ -179,7 +174,6 @@ export interface AdvancedProjectFilters extends ProjectFilters {
     classification?: string;
     serviceType?: string;
     analyst?: string;
-    showFinalized?: boolean;
 }
 
 // Contadores de filtros
@@ -188,7 +182,7 @@ export interface FilterCounts {
         inExecution: number;
         renderingAccounts: number;
         notStarted: number;
-        finalized: number;
+        closed: number;
     };
     byDaysRemaining: {
         overdue: number;

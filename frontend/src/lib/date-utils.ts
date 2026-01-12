@@ -5,11 +5,11 @@ import { Project, TimeStatus, UrgencyLevel } from '@/types';
  */
 export function parseDate(dateStr: string): Date | null {
     if (!dateStr || dateStr.length !== 8) return null;
-    
+
     const year = Number(dateStr.substring(0, 4));
     const month = Number(dateStr.substring(4, 6)) - 1;
     const day = Number(dateStr.substring(6, 8));
-    
+
     return new Date(year, month, day);
 }
 
@@ -29,7 +29,7 @@ export function getToday(): Date {
 export function getDaysRemaining(endDate: string): number | null {
     const end = parseDate(endDate);
     if (!end) return null;
-    
+
     const today = getToday();
     const diffTime = end.getTime() - today.getTime();
     return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
@@ -51,7 +51,7 @@ export function getDaysSinceEnd(endDate: string): number {
 export function getDaysRemainingForAccountRendering(endDate: string): number | null {
     const daysSinceEnd = getDaysSinceEnd(endDate);
     if (daysSinceEnd === 0) return null; // Projeto ainda não terminou
-    
+
     return Math.max(0, 60 - daysSinceEnd);
 }
 
@@ -78,7 +78,7 @@ export function isInExecution(startDate: string, endDate: string): boolean {
     const start = parseDate(startDate);
     const end = parseDate(endDate);
     if (!start || !end) return false;
-    
+
     const today = getToday();
     return today >= start && today <= end;
 }
@@ -89,9 +89,35 @@ export function isInExecution(startDate: string, endDate: string): boolean {
 export function isNotStarted(startDate: string): boolean {
     const start = parseDate(startDate);
     if (!start) return false;
-    
+
     const today = getToday();
     return today < start;
+}
+
+/**
+ * Verifica se projeto está encerrado usando CTT_DTENC
+ * Um projeto está encerrado se:
+ * - CTT_DTENC existe, tem 8 caracteres E a data é <= hoje
+ * - E NÃO está em vigência (pois vigência tem prioridade)
+ */
+export function isProjectClosed(project: Project): boolean {
+    if (!project.CTT_DTENC || project.CTT_DTENC.trim().length !== 8) {
+        return false;
+    }
+
+    // Se está em vigência, não é considerado encerrado para o dashboard
+    if (isInExecution(project.CTT_DTINI, project.CTT_DTFIM)) {
+        return false;
+    }
+
+    // Verificar se a data de encerramento é <= hoje
+    const encDate = parseDate(project.CTT_DTENC);
+    if (!encDate) {
+        return false;
+    }
+
+    const today = getToday();
+    return encDate <= today;
 }
 
 /**
@@ -110,12 +136,12 @@ export function isRenderingAccountsUrgent(endDate: string): boolean {
 export function isProjectCritical(project: Project): boolean {
     const daysRemaining = getDaysRemaining(project.CTT_DTFIM);
     const usagePercent = project.usage_percent || 0;
-    
+
     // Crítico se: vigência vence em 7 dias ou menos, OU prestação de contas urgente, OU execução > 100%
     if (daysRemaining !== null && daysRemaining >= 0 && daysRemaining <= 7) return true;
     if (isRenderingAccountsUrgent(project.CTT_DTFIM)) return true;
     if (usagePercent > 100) return true;
-    
+
     return false;
 }
 
@@ -125,11 +151,11 @@ export function isProjectCritical(project: Project): boolean {
 export function needsUrgentAttention(project: Project): boolean {
     const daysRemaining = getDaysRemaining(project.CTT_DTFIM);
     const usagePercent = project.usage_percent || 0;
-    
+
     // Atenção se: vence em 30 dias ou execução > 85%
     if (daysRemaining !== null && daysRemaining <= 30 && daysRemaining > 0) return true;
     if (usagePercent > 85) return true;
-    
+
     return false;
 }
 
@@ -142,27 +168,27 @@ export function getUrgencyLevel(project: Project): UrgencyLevel {
     const usagePercent = project.usage_percent || 0;
     const renderingDaysRemaining = getDaysRemainingForAccountRendering(project.CTT_DTFIM);
     const isRendering = isInRenderingAccountsPeriod(project.CTT_DTFIM);
-    
+
     // Nível 4 - Urgente: execução > 100% OU vigência vence hoje OU prestação de contas com ≤ 7 dias
     if (usagePercent > 100) return 4;
     if (daysRemaining === 0) return 4;
     if (isRendering && renderingDaysRemaining !== null && renderingDaysRemaining <= 7) return 4;
-    
+
     // Nível 3 - Crítico: vigência vence em ≤ 7 dias OU prestação de contas com ≤ 15 dias OU execução > 95%
     if (daysRemaining !== null && daysRemaining > 0 && daysRemaining <= 7) return 3;
     if (isRendering && renderingDaysRemaining !== null && renderingDaysRemaining <= 15) return 3;
     if (usagePercent > 95) return 3;
-    
+
     // Nível 2 - Atenção: vigência vence em ≤ 30 dias OU prestação de contas com ≤ 30 dias OU execução > 85%
     if (daysRemaining !== null && daysRemaining > 0 && daysRemaining <= 30) return 2;
     if (isRendering && renderingDaysRemaining !== null && renderingDaysRemaining <= 30) return 2;
     if (usagePercent > 85) return 2;
-    
+
     // Nível 1 - Alerta: vigência vence em ≤ 60 dias OU prestação de contas OU execução > 70%
     if (daysRemaining !== null && daysRemaining > 0 && daysRemaining <= 60) return 1;
     if (isRendering) return 1;
     if (usagePercent > 70) return 1;
-    
+
     // Nível 0 - OK
     return 0;
 }
@@ -172,32 +198,32 @@ export function getUrgencyLevel(project: Project): UrgencyLevel {
  */
 export function getTimeStatus(project: Project): TimeStatus {
     const daysRemaining = getDaysRemaining(project.CTT_DTFIM);
-    
+
     // Não iniciado
     if (isNotStarted(project.CTT_DTINI)) {
         return 'not_started';
     }
-    
+
     // Atrasado (já passou da data fim)
     if (daysRemaining !== null && daysRemaining < 0) {
         return 'overdue';
     }
-    
+
     // Crítico (menos de 7 dias)
     if (daysRemaining !== null && daysRemaining <= 7) {
         return 'critical';
     }
-    
+
     // Atenção (menos de 30 dias)
     if (daysRemaining !== null && daysRemaining <= 30) {
         return 'warning';
     }
-    
+
     // Normal (menos de 60 dias)
     if (daysRemaining !== null && daysRemaining <= 60) {
         return 'normal';
     }
-    
+
     // Seguro (mais de 60 dias)
     return 'safe';
 }
@@ -266,16 +292,16 @@ export function formatRenderingAccountsDays(endDate: string): string {
  * Verifica se projeto está dentro de um range de dias
  */
 export function isWithinDaysRange(
-    endDate: string, 
-    minDays: number | undefined, 
+    endDate: string,
+    minDays: number | undefined,
     maxDays: number | undefined
 ): boolean {
     const daysRemaining = getDaysRemaining(endDate);
     if (daysRemaining === null) return false;
-    
+
     if (minDays !== undefined && daysRemaining < minDays) return false;
     if (maxDays !== undefined && daysRemaining > maxDays) return false;
-    
+
     return true;
 }
 
@@ -292,7 +318,7 @@ export function filterByVigenciaDaysRange(
         const days = getDaysRemaining(project.CTT_DTFIM);
         // Só considera projetos em vigência (dias >= 0)
         if (days === null || days < 0) return false;
-        
+
         switch (range) {
             case 'today':
                 return days === 0;
@@ -330,7 +356,7 @@ export function filterByRenderingDaysRange(
         const renderingDays = getDaysRemainingForAccountRendering(project.CTT_DTFIM);
         // Só considera projetos em período de prestação de contas
         if (renderingDays === null) return false;
-        
+
         switch (range) {
             case 'today':
                 return renderingDays === 0;
@@ -368,7 +394,7 @@ export function filterByExecutionRange(
 ): Project[] {
     return projects.filter(project => {
         const execution = project.usage_percent || 0;
-        
+
         switch (range) {
             case 'low':
                 return execution >= 0 && execution < 50;
@@ -388,3 +414,19 @@ export function filterByExecutionRange(
     });
 }
 
+/**
+ * Formata CTT_DTENC para exibição
+ * Retorna "A definir" se não estiver preenchido
+ */
+export function formatEncerramento(cttDtenc?: string): string {
+    if (!cttDtenc || cttDtenc.trim().length !== 8) {
+        return "A definir";
+    }
+
+    const date = parseDate(cttDtenc);
+    if (!date) {
+        return "A definir";
+    }
+
+    return date.toLocaleDateString('pt-BR');
+}

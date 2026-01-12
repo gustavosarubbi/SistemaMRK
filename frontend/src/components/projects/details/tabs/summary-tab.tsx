@@ -10,7 +10,7 @@ import { useQuery } from '@tanstack/react-query';
 import api from '@/lib/api';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ProjectTimeline } from '../project-timeline';
-import { FinalizationStatus } from '../finalization-status';
+import { formatEncerramento } from '@/lib/date-utils';
 
 interface SummaryTabProps {
     project: Project;
@@ -155,9 +155,14 @@ export function SummaryTab({ project }: SummaryTabProps) {
                         </div>
                         <div className="space-y-1">
                             <label className="text-xs font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1.5">
-                                <Layers className="h-4 w-4" /> Classificação
+                                <Clock className="h-4 w-4" /> Encerramento ERP
                             </label>
-                            <p className="font-bold text-base text-slate-900 truncate">{getProjectClassification(project.CTT_CLAPRJ)}</p>
+                            <p className={cn(
+                                "font-bold text-base truncate",
+                                project.CTT_DTENC ? "text-slate-900" : "text-slate-400 font-medium"
+                            )}>
+                                {formatEncerramento(project.CTT_DTENC)}
+                            </p>
                         </div>
                     </div>
                 </div>
@@ -174,19 +179,21 @@ export function SummaryTab({ project }: SummaryTabProps) {
                             <ProjectTimeline
                                 startDate={project.CTT_DTINI}
                                 endDate={project.CTT_DTFIM}
-                                isFinalized={project.is_finalized}
+                                cttDtenc={project.CTT_DTENC}
                             />
                         </div>
                         <div className="w-full lg:w-auto shrink-0 lg:border-l lg:pl-5 border-slate-200">
                             <span className="text-xs font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1.5 mb-2">
-                                <Activity className="h-4 w-4" /> Status do Projeto
+                                <Clock className="h-4 w-4" /> Data de Encerramento
                             </span>
-                            <FinalizationStatus
-                                projectId={project.CTT_CUSTO}
-                                isFinalized={project.is_finalized}
-                                finalizedAt={project.finalized_at}
-                                finalizedBy={project.finalized_by}
-                            />
+                            <div className="bg-slate-50 rounded-md px-4 py-2.5 border border-slate-200">
+                                <p className="text-sm font-semibold text-slate-900">
+                                    {formatEncerramento(project.CTT_DTENC)}
+                                </p>
+                                {project.CTT_DTENC && project.CTT_DTENC.trim().length === 8 && (
+                                    <p className="text-xs text-slate-500 mt-0.5">Projeto encerrado</p>
+                                )}
+                            </div>
                         </div>
                     </div>
                 </div>

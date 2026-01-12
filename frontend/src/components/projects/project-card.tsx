@@ -31,29 +31,43 @@ const formatDate = (dateStr: string): string => {
 }
 
 // Badge de vigência
-const getVigenciaBadge = (dtIni: string, dtFim: string, isFinalized?: boolean) => {
+const getVigenciaBadge = (dtIni: string, dtFim: string, cttDtenc?: string) => {
     if (!dtIni || !dtFim || dtIni.length !== 8 || dtFim.length !== 8) return null
-    
+
     const today = new Date()
     today.setHours(0, 0, 0, 0)
-    
+
     const start = new Date(Number(dtIni.substring(0, 4)), Number(dtIni.substring(4, 6)) - 1, Number(dtIni.substring(6, 8)))
     const end = new Date(Number(dtFim.substring(0, 4)), Number(dtFim.substring(4, 6)) - 1, Number(dtFim.substring(6, 8)))
-    
+
+    // Verificar se tem data de encerramento válida
+    const hasEncerramento = cttDtenc && cttDtenc.trim().length === 8
+
     const endPlus60 = new Date(end)
     endPlus60.setDate(endPlus60.getDate() + 60)
-    
-    if (today >= start && today <= end) {
-        return <Badge variant="success" className="text-[10px]">Em Execução</Badge>
-    } else if (today > end && today <= endPlus60) {
-        return <Badge variant="warning" className="text-[10px]">Prestar Contas</Badge>
-    } else if (today > endPlus60) {
-        return <Badge variant="secondary" className="text-[10px]">
-            {isFinalized ? 'Finalizado' : 'Pendente'}
-        </Badge>
-    } else {
+
+    // 1. Não Iniciado
+    if (today < start) {
         return <Badge variant="outline" className="text-[10px]">Não Iniciado</Badge>
     }
+
+    // 2. Em Execução (Prioridade sobre Encerrado ERP)
+    if (today <= end) {
+        return <Badge variant="success" className="text-[10px]">Em Execução</Badge>
+    }
+
+    // 3. Encerrado (Somente se não estiver em execução)
+    if (hasEncerramento) {
+        return <Badge variant="secondary" className="text-[10px]">Encerrado</Badge>
+    }
+
+    // 4. Prestar Contas (Até 60 dias após o fim e sem CTT_DTENC)
+    if (today <= endPlus60) {
+        return <Badge variant="warning" className="text-[10px]">Prestar Contas</Badge>
+    }
+
+    // 5. Pendente (Mais de 60 dias após o fim e sem CTT_DTENC)
+    return <Badge variant="secondary" className="text-[10px]">Pendente</Badge>
 }
 
 interface BillingResponse {
@@ -91,7 +105,7 @@ export function ProjectCard({
     // Calcular Saldo Financeiro: Parcelas Faturadas - Realizado
     const totalBilling = billingData?.total_billing || 0;
     const realized = project.realized || 0;
-    const financialBalance = totalBilling > 0 
+    const financialBalance = totalBilling > 0
         ? totalBilling - realized
         : 0;
 
@@ -109,7 +123,7 @@ export function ProjectCard({
     }
 
     return (
-        <Card 
+        <Card
             className={cn(
                 "group relative transition-all duration-200 cursor-pointer",
                 "hover:shadow-lg hover:border-primary/30",
@@ -120,18 +134,17 @@ export function ProjectCard({
             onClick={handleCardClick}
         >
             {/* Checkbox de seleção */}
-            <div 
+            <div
                 className="absolute top-3 right-3 z-10"
                 onClick={(e) => e.stopPropagation()}
             >
                 <Checkbox
                     checked={isSelected}
-                    onChange={(e) => {
-                        e.stopPropagation();
-                        onSelect(e.target.checked);
+                    onCheckedChange={(checked) => {
+                        if (onSelect) onSelect(!!checked);
                     }}
                     onClick={(e) => e.stopPropagation()}
-                    aria-label={`Selecionar ${project.CTT_DESC01}`}
+                    aria-label="Select project"
                 />
             </div>
 
@@ -140,7 +153,7 @@ export function ProjectCard({
                     <Badge variant="outline" className="text-xs shrink-0">
                         {project.CTT_CUSTO}
                     </Badge>
-                    {getVigenciaBadge(project.CTT_DTINI, project.CTT_DTFIM, project.is_finalized)}
+                    {getVigenciaBadge(project.CTT_DTINI, project.CTT_DTFIM, project.CTT_DTENC)}
                 </div>
                 <div className="flex items-start gap-1.5 mt-2">
                     <h3 className="font-semibold text-sm line-clamp-2 flex-1">
@@ -215,9 +228,9 @@ export function ProjectCard({
 
                 {/* Botão de detalhes */}
                 <Link href={`/dashboard/projects/${encodeURIComponent(project.CTT_CUSTO)}`} className="block">
-                    <Button 
-                        variant="outline" 
-                        size="sm" 
+                    <Button
+                        variant="outline"
+                        size="sm"
                         className="w-full mt-2 opacity-0 group-hover:opacity-100 transition-opacity"
                     >
                         Ver Detalhes

@@ -26,11 +26,11 @@ export default function ProjectDetailsPage() {
                 // O Axios já faz encoding automático, mas garantimos que espaços sejam tratados
                 const encodedId = encodeURIComponent(id);
                 const res = await api.get(`/projects/${encodedId}`);
-                
+
                 if (!res.data || Object.keys(res.data).length === 0) {
                     throw new Error('Projeto não encontrado');
                 }
-                
+
                 return res.data;
             } catch (error: any) {
                 console.error('Erro ao carregar projeto:', error);
@@ -86,10 +86,10 @@ export default function ProjectDetailsPage() {
     }
 
     if (projectError || !project || !project.CTT_CUSTO) {
-        const errorMessage = projectError 
+        const errorMessage = projectError
             ? (projectError as any)?.response?.data?.detail || (projectError as any)?.message || 'Erro ao carregar projeto.'
             : 'Projeto não encontrado.';
-        
+
         return (
             <div className="flex flex-col items-center justify-center h-96 space-y-4 px-4 md:px-6">
                 <p className="text-muted-foreground">
@@ -119,7 +119,7 @@ export default function ProjectDetailsPage() {
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 justify-between">
                 <PageHeader
                     title={project.CTT_DESC01 || 'Detalhes do Projeto'}
-                    description={`Código: ${project.CTT_CUSTO}${project.CTT_UNIDES ? ` • ${project.CTT_UNIDES}` : ''}`}
+                    description={`Código: ${project.CTT_CUSTO}${project.CTT_UNIDES ? ` • ${project.CTT_UNIDES}` : ''}${project.CTT_DTENC && project.CTT_DTENC.trim().length === 8 ? ` • Encerrado em: ${formatDate(project.CTT_DTENC)}` : ''}`}
                     breadcrumbItems={[
                         { label: 'Projetos', href: '/dashboard/projects' },
                         { label: project.CTT_DESC01 || 'Detalhes' }

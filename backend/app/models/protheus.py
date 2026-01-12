@@ -9,6 +9,7 @@ class CTT010(Base):
     CTT_DESC01 = Column(String(200))
     CTT_DTINI = Column(String(8)) # Protheus dates are often strings YYYYMMDD
     CTT_DTFIM = Column(String(8))
+    CTT_DTENC = Column(String(8)) # Data de encerramento do projeto
     CTT_UNIDES = Column(String(100))
     CTT_DEPDES = Column(String(200))
     CTT_DEPART = Column(String(50))

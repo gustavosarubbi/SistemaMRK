@@ -5,10 +5,10 @@ interface ProjectTimelineProps {
     startDate: string; // YYYYMMDD format
     endDate: string; // YYYYMMDD format
     className?: string;
-    isFinalized?: boolean; // Se o projeto foi validado como finalizado
+    cttDtenc?: string; // Data de encerramento real do ERP
 }
 
-export function ProjectTimeline({ startDate, endDate, className, isFinalized = false }: ProjectTimelineProps) {
+export function ProjectTimeline({ startDate, endDate, className, cttDtenc }: ProjectTimelineProps) {
     const formatDate = (dateStr: string) => {
         if (!dateStr || dateStr.length !== 8) return '-';
         return `${dateStr.substring(6, 8)}/${dateStr.substring(4, 6)}/${dateStr.substring(0, 4)}`;
@@ -46,26 +46,44 @@ export function ProjectTimeline({ startDate, endDate, className, isFinalized = f
     let statusColor = 'bg-primary';
     let statusText = '';
 
+    // Verificar se tem data de encerramento válida
+    const hasEncerramento = cttDtenc && cttDtenc.trim().length === 8;
+
+    // 1. Não Iniciado
     if (today < start) {
         status = 'not_started';
         statusColor = 'bg-muted';
         statusText = 'Não iniciado';
-    } else if (today > end) {
+    }
+    // 2. Em Execução (Prioridade sobre Encerrado ERP)
+    else if (today <= end) {
+        if (remainingDays <= 30) {
+            status = 'ending_soon';
+            statusColor = 'bg-orange-600';
+            statusText = `${remainingDays} dias restantes`;
+        } else {
+            status = 'in_progress';
+            statusColor = 'bg-green-600';
+            statusText = `${remainingDays} dias restantes`;
+        }
+    }
+    // 3. Encerrado (Somente se não estiver em execução)
+    else if (hasEncerramento) {
         status = 'finished';
         statusColor = 'bg-muted-foreground';
-        statusText = isFinalized ? 'Finalizado' : 'Pendente';
-    } else if (remainingDays <= 0) {
-        status = 'overdue';
-        statusColor = 'bg-red-600';
-        statusText = `${Math.abs(remainingDays)} dias de atraso`;
-    } else if (remainingDays <= 30) {
-        status = 'ending_soon';
-        statusColor = 'bg-orange-600';
-        statusText = `${remainingDays} dias restantes`;
-    } else {
-        status = 'in_progress';
-        statusColor = 'bg-green-600';
-        statusText = `${remainingDays} dias restantes`;
+        statusText = 'Encerrado';
+    }
+    // 4. Prestar Contas (Até 60 dias após o fim e sem CTT_DTENC)
+    else if (remainingDays <= 0 && Math.abs(remainingDays) <= 60) {
+        status = 'overdue'; // Usando 'overdue' visualmente para prestação de contas pendente
+        statusColor = 'bg-orange-500';
+        statusText = 'Prestar Contas';
+    }
+    // 5. Pendente (Mais de 60 dias após o fim)
+    else {
+        status = 'finished';
+        statusColor = 'bg-muted-foreground';
+        statusText = 'Pendente';
     }
 
     return (

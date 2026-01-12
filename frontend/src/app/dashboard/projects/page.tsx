@@ -28,8 +28,9 @@ import { SaveFilterModal } from '@/components/projects/save-filter-modal';
 import { useProjectPreferencesStore } from '@/store/projectPreferencesStore';
 import { exportProjects, ExportFormat } from '@/lib/export-utils';
 import { useDebouncedCallback } from 'use-debounce';
+import { useToast } from "@/hooks/use-toast"
 import { useFilterCounts, useUrgencyCounts } from '@/hooks/useFilterCounts';
-import { 
+import {
     filterByVigenciaDaysRange,
     filterByRenderingDaysRange,
     filterByExecutionRange,
@@ -45,7 +46,7 @@ import { cn } from '@/lib/utils';
 export default function ProjectsPage() {
     const searchParams = useSearchParams();
     const router = useRouter();
-    
+
     // Preferences from store
     const {
         visibleColumns,
@@ -65,7 +66,7 @@ export default function ProjectsPage() {
         const status = searchParams.get('status') || '';
         const sort = searchParams.get('sort') || '';
         const filter = searchParams.get('filter') || '';
-        
+
         return {
             search: '',
             startDate: '2023-01-01',
@@ -75,38 +76,36 @@ export default function ProjectsPage() {
             status: status || '',
             showApprovedOnly: false,
             vigenciaDaysRange: 'all',
-            renderingDaysRange: 'all',
             executionRange: 'all',
             classification: '',
             serviceType: '',
             analyst: '',
-            showFinalized: false,
         };
     }, [searchParams]);
 
     // Local state for filters
     const [filters, setFilters] = useState<AdvancedProjectFilters>(getInitialFilters());
-    
+
     // Apply URL params on mount
     useEffect(() => {
         const status = searchParams.get('status');
         const sort = searchParams.get('sort');
         const filter = searchParams.get('filter');
-        
+
         if (status) {
             setFilters(prev => ({ ...prev, status }));
         }
-        
+
         // Handle ending_soon filter
         if (filter === 'ending_soon' && status === 'in_execution') {
-            setFilters(prev => ({ 
-                ...prev, 
+            setFilters(prev => ({
+                ...prev,
                 status: 'in_execution',
                 vigenciaDaysRange: '30days'
             }));
         }
     }, [searchParams]);
-    
+
     const [page, setPage] = useState(1);
     const [selectedRows, setSelectedRows] = useState<Project[]>([]);
     const [isCompareOpen, setIsCompareOpen] = useState(false);
@@ -114,14 +113,16 @@ export default function ProjectsPage() {
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
     const [activeUrgencyFilter, setActiveUrgencyFilter] = useState<string | undefined>();
     const [activePreset, setActivePreset] = useState<FilterPreset | undefined>();
-    
+    const [exportAll, setExportAll] = useState(false);
+    const { toast } = useToast();
+
     // Debounced search for API calls
     const [debouncedSearch, setDebouncedSearch] = useState('');
     const debouncedSetSearch = useDebouncedCallback((value: string) => {
         setDebouncedSearch(value);
         setPage(1);
     }, 300);
-    
+
     // Fetch filter options (Coordinators and Clients) - com cache longo
     const { data: filterOptions } = useQuery({
         queryKey: ['project-options'],
@@ -142,7 +143,7 @@ export default function ProjectsPage() {
 
     // Fetch projects - com cache otimizado
     const { data, isLoading, error, refetch } = useQuery<PaginatedResponse<Project>>({
-        queryKey: ['projects', debouncedSearch, page, filters.startDate, filters.endDate, filters.coordinator, filters.client, filters.status, filters.analyst, filters.showFinalized, itemsPerPage],
+        queryKey: ['projects', debouncedSearch, page, filters.startDate, filters.endDate, filters.coordinator, filters.client, filters.status, filters.analyst, itemsPerPage],
         queryFn: async () => {
             const params = new URLSearchParams();
             if (debouncedSearch) params.append('search', debouncedSearch);
@@ -152,11 +153,10 @@ export default function ProjectsPage() {
             if (filters.client) params.append('client', filters.client);
             if (filters.status && filters.status !== 'not_started') params.append('status', filters.status);
             if (filters.analyst) params.append('analyst', filters.analyst);
-            if (filters.showFinalized !== undefined) params.append('show_finalized', filters.showFinalized.toString());
-            
+
             params.append('page', page.toString());
             params.append('limit', itemsPerPage.toString());
-            
+
             const res = await api.get(`/projects?${params.toString()}`);
             return res.data;
         },
@@ -169,7 +169,7 @@ export default function ProjectsPage() {
     });
 
     const allProjects = data?.data || [];
-    
+
     // Fetch all projects for counts calculation (only with date filters)
     // This ensures counts show all available coordinators/clients/classifications/types
     // in the selected time period, regardless of other active filters
@@ -182,24 +182,24 @@ export default function ProjectsPage() {
             if (filters.endDate) params.append('end_date', filters.endDate);
             // Não aplicar outros filtros (search, status, coordinator, client, etc)
             // para que os counts mostrem todas as opções disponíveis no período
-            
+
             // Buscar todos os projetos fazendo múltiplas requisições se necessário
             const allProjects: Project[] = [];
             let currentPage = 1;
             const limit = 1000; // Limite por página
             let hasMore = true;
-            
+
             while (hasMore) {
                 const pageParams = new URLSearchParams(params);
                 pageParams.append('page', currentPage.toString());
                 pageParams.append('limit', limit.toString());
-                
+
                 const res = await api.get(`/projects?${pageParams.toString()}`);
                 const pageData = res.data;
-                
+
                 if (pageData.data && pageData.data.length > 0) {
                     allProjects.push(...pageData.data);
-                    
+
                     // Verificar se há mais páginas
                     const totalPages = pageData.total_pages || 1;
                     if (currentPage >= totalPages || pageData.data.length < limit) {
@@ -211,7 +211,7 @@ export default function ProjectsPage() {
                     hasMore = false;
                 }
             }
-            
+
             return {
                 data: allProjects,
                 total: allProjects.length,
@@ -228,11 +228,11 @@ export default function ProjectsPage() {
     });
 
     const allProjectsForCountsData = allProjectsForCounts?.data || [];
-    
+
     // Apply client-side filters
     const filteredProjects = useMemo(() => {
         let result = allProjects;
-        
+
         // Filter by approved only
         if (filters.showApprovedOnly) {
             result = result.filter(p => {
@@ -241,7 +241,7 @@ export default function ProjectsPage() {
                 return hasBudget && isNotBlocked;
             });
         }
-        
+
         // Filter by classification
         if (filters.classification) {
             result = result.filter(p => {
@@ -249,7 +249,7 @@ export default function ProjectsPage() {
                 return classification === filters.classification;
             });
         }
-        
+
         // Filter by service type
         if (filters.serviceType) {
             result = result.filter(p => {
@@ -257,27 +257,17 @@ export default function ProjectsPage() {
                 return serviceType === filters.serviceType;
             });
         }
-        
+
         // Filter by vigência days remaining
         if (filters.vigenciaDaysRange && filters.vigenciaDaysRange !== 'all') {
             result = filterByVigenciaDaysRange(
-                result, 
+                result,
                 filters.vigenciaDaysRange,
                 filters.vigenciaDaysMin,
                 filters.vigenciaDaysMax
             );
         }
-        
-        // Filter by rendering days remaining
-        if (filters.renderingDaysRange && filters.renderingDaysRange !== 'all') {
-            result = filterByRenderingDaysRange(
-                result,
-                filters.renderingDaysRange,
-                filters.renderingDaysMin,
-                filters.renderingDaysMax
-            );
-        }
-        
+
         // Filter by execution range
         if (filters.executionRange && filters.executionRange !== 'all') {
             result = filterByExecutionRange(
@@ -287,7 +277,7 @@ export default function ProjectsPage() {
                 filters.executionMax
             );
         }
-        
+
         // Filter by urgency card
         if (activeUrgencyFilter) {
             result = result.filter(project => {
@@ -310,14 +300,14 @@ export default function ProjectsPage() {
                 }
             });
         }
-        
+
         // Filter by preset
         if (activePreset && activePreset !== 'all') {
             result = result.filter(project => {
                 const days = getDaysRemaining(project.CTT_DTFIM);
                 const daysSinceEnd = getDaysSinceEnd(project.CTT_DTFIM);
                 const usage = project.usage_percent || 0;
-                
+
                 switch (activePreset) {
                     case 'critical':
                         return isProjectCritical(project);
@@ -334,21 +324,21 @@ export default function ProjectsPage() {
                 }
             });
         }
-        
+
         return result;
     }, [allProjects, filters, activeUrgencyFilter, activePreset]);
-    
+
     const totalPages = data?.total_pages || 1;
     const totalItems = data?.total || 0;
 
     // Calcular counts com todos os projetos (sem filtros de coordenador, cliente, classificação, tipo)
     // Isso garante que os counts sejam precisos mesmo quando há filtros ativos
     const filterCounts = useFilterCounts(allProjectsForCountsData);
-    
+
     // Calcular contadores de urgência apenas com projetos da página atual
     // Para contadores globais, usar stats do backend
     const urgencyCountsRaw = useUrgencyCounts(allProjects);
-    
+
     // Usar stats do backend para contadores globais (mais preciso e eficiente)
     const urgencyCounts = {
         critical: urgencyCountsRaw.critical, // Calculado localmente apenas para projetos visíveis
@@ -398,12 +388,10 @@ export default function ProjectsPage() {
             status: '',
             showApprovedOnly: false,
             vigenciaDaysRange: 'all',
-            renderingDaysRange: 'all',
             executionRange: 'all',
             classification: '',
             serviceType: '',
             analyst: '',
-            showFinalized: false,
         });
         setDebouncedSearch('');
         setActiveUrgencyFilter(undefined);
@@ -415,11 +403,49 @@ export default function ProjectsPage() {
         toggleColumn(columnId);
     }, [toggleColumn]);
 
-    const handleExport = useCallback((format: ExportFormat, selectedOnly: boolean) => {
-        const dataToExport = selectedOnly ? selectedRows : filteredProjects;
+    const handleExport = useCallback(async (format: ExportFormat, selectedOnly: boolean) => {
+        let dataToExport = selectedOnly ? selectedRows : filteredProjects;
+
+        if (exportAll && !selectedOnly) {
+            toast({
+                title: "Preparando exportação",
+                description: "Buscando todos os registros filtrados...",
+            });
+
+            try {
+                const params = new URLSearchParams();
+                if (debouncedSearch) params.append('search', debouncedSearch);
+                if (filters.startDate) params.append('start_date', filters.startDate);
+                if (filters.endDate) params.append('end_date', filters.endDate);
+                if (filters.coordinator) params.append('coordinator', filters.coordinator);
+                if (filters.client) params.append('client', filters.client);
+                if (filters.status && filters.status !== 'not_started') params.append('status', filters.status);
+                if (filters.analyst) params.append('analyst', filters.analyst);
+
+                // Buscar todos os registros sem paginação limitada
+                params.append('page', '1');
+                params.append('limit', '5000'); // Um limite alto o suficiente para "todos"
+
+                const res = await api.get(`/projects?${params.toString()}`);
+                dataToExport = res.data.data || [];
+
+                toast({
+                    title: "Sucesso",
+                    description: `${dataToExport.length} registros prontos para exportação.`,
+                });
+            } catch (error) {
+                console.error("Erro ao buscar dados para exportação:", error);
+                toast({
+                    type: "error",
+                    title: "Erro",
+                    description: "Não foi possível buscar todos os registros. Exportando apenas página atual.",
+                });
+            }
+        }
+
         const filename = `projetos-${new Date().toISOString().split('T')[0]}`;
         exportProjects(dataToExport, format, filename);
-    }, [selectedRows, filteredProjects]);
+    }, [selectedRows, filteredProjects, exportAll, debouncedSearch, filters, toast]);
 
     const handleSaveFilter = useCallback((name: string) => {
         const newFilter: SavedFilter = {
@@ -490,7 +516,6 @@ export default function ProjectsPage() {
             filters.status ||
             filters.showApprovedOnly ||
             filters.vigenciaDaysRange !== 'all' ||
-            filters.renderingDaysRange !== 'all' ||
             filters.executionRange !== 'all' ||
             filters.classification ||
             filters.serviceType ||
@@ -513,19 +538,19 @@ export default function ProjectsPage() {
             {/* Main Content with Sidebar */}
             <div className="flex gap-4">
                 {/* Filters Sidebar */}
-                    <FiltersSidebar
-                        filters={filters}
-                        onFiltersChange={handleFiltersChange}
-                        onClearFilters={handleClearFilters}
-                        onSaveFilter={() => setIsSaveFilterOpen(true)}
-                        counts={filterCounts}
-                        coordinators={coordinators}
-                        clients={clients}
-                        analysts={analysts}
-                        isOpen={isSidebarOpen}
-                        onToggle={() => setIsSidebarOpen(!isSidebarOpen)}
-                        projects={allProjects}
-                    />
+                <FiltersSidebar
+                    filters={filters}
+                    onFiltersChange={handleFiltersChange}
+                    onClearFilters={handleClearFilters}
+                    onSaveFilter={() => setIsSaveFilterOpen(true)}
+                    counts={filterCounts}
+                    coordinators={coordinators}
+                    clients={clients}
+                    analysts={analysts}
+                    isOpen={isSidebarOpen}
+                    onToggle={() => setIsSidebarOpen(!isSidebarOpen)}
+                    projects={allProjects}
+                />
 
                 {/* Main Content Area */}
                 <div className="flex-1 min-w-0 space-y-4">
@@ -544,8 +569,8 @@ export default function ProjectsPage() {
 
                     {/* Stats Cards */}
                     <div className="relative z-10">
-                        <ProjectStatsCards 
-                            stats={data?.stats} 
+                        <ProjectStatsCards
+                            stats={data?.stats}
                             onFilterClick={handleStatusFilterClick}
                             currentFilter={filters.status}
                         />
@@ -572,6 +597,8 @@ export default function ProjectsPage() {
                         visibleColumns={visibleColumns}
                         onColumnVisibilityChange={handleColumnVisibilityChange}
                         onExport={handleExport}
+                        exportAll={exportAll}
+                        onExportAllChange={setExportAll}
                         onCompare={() => setIsCompareOpen(true)}
                         onClearFilters={handleClearFilters}
                         hasActiveFilters={hasActiveFilters}
@@ -624,12 +651,12 @@ export default function ProjectsPage() {
                                     }
                                 />
                             )}
-                            
+
                             {/* Pagination */}
                             {filteredProjects.length > 0 && (
                                 <div className="border-t bg-muted/30 px-4 py-3">
-                                    <Pagination 
-                                        page={page} 
+                                    <Pagination
+                                        page={page}
                                         totalPages={totalPages}
                                         totalItems={totalItems}
                                         itemsPerPage={itemsPerPage}

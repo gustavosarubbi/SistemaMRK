@@ -2,14 +2,15 @@
 
 import { useMemo } from 'react';
 import { Project, FilterCounts } from '@/types';
-import { 
-    getDaysRemaining, 
+import {
+    getDaysRemaining,
     getDaysSinceEnd,
     isInExecution,
     isNotStarted,
     isInRenderingAccountsPeriod,
     getDaysRemainingForAccountRendering,
     isRenderingAccountsUrgent,
+    isProjectClosed,
 } from '@/lib/date-utils';
 import { getProjectClassification, getServiceType, getProjectAnalyst } from '@/lib/project-mappings';
 
@@ -23,7 +24,7 @@ export function useFilterCounts(projects: Project[]): FilterCounts {
                 inExecution: 0,
                 renderingAccounts: 0,
                 notStarted: 0,
-                finalized: 0,
+                closed: 0,
             },
             byDaysRemaining: {
                 overdue: 0,
@@ -50,17 +51,21 @@ export function useFilterCounts(projects: Project[]): FilterCounts {
             const daysSinceEnd = getDaysSinceEnd(project.CTT_DTFIM);
             const execution = project.usage_percent || 0;
 
-            // Por Status
-            // Projetos finalizados têm prioridade e não entram em outras categorias
-            if (project.is_finalized) {
-                counts.byStatus.finalized++;
-            } else if (isNotStarted(project.CTT_DTINI)) {
+            // Por Status - ORDEM DE PRIORIDADE:
+            // 1. PRIMEIRO: Verificar se está em execução (CTT_DTINI <= hoje <= CTT_DTFIM)
+            // 2. SEGUNDO: Se não está em execução, verificar se está encerrado (tem CTT_DTENC E CTT_DTENC <= hoje)
+            // 3. TERCEIRO: Se não está em execução E não está encerrado, vai para "Prestar Contas"
+
+            if (isNotStarted(project.CTT_DTINI)) {
                 counts.byStatus.notStarted++;
             } else if (isInExecution(project.CTT_DTINI, project.CTT_DTFIM)) {
+                // PRIMEIRO: Se está em execução, está em execução (independente de CTT_DTENC)
                 counts.byStatus.inExecution++;
+            } else if (isProjectClosed(project)) {
+                // SEGUNDO: Se não está em execução E está encerrado (CTT_DTENC <= hoje)
+                counts.byStatus.closed++;
             } else if (daysSinceEnd > 0) {
-                // Todos os projetos que já terminaram vão para renderingAccounts
-                // EXCETO os que foram finalizados (já tratados acima)
+                // TERCEIRO: Se não está em execução E não está encerrado, vai para "Prestar Contas"
                 counts.byStatus.renderingAccounts++;
             }
 
@@ -157,7 +162,7 @@ export function useUrgencyCounts(projects: Project[]) {
             // Prestação de contas (todos em período de prestação)
             if (isRendering) {
                 renderingAccounts++;
-                
+
                 // Prestação de contas urgente (≤15 dias restantes)
                 const renderingDaysRemaining = getDaysRemainingForAccountRendering(project.CTT_DTFIM);
                 if (renderingDaysRemaining !== null && renderingDaysRemaining <= 15) {

@@ -2,17 +2,17 @@
 
 import * as React from "react"
 import { Button } from "@/components/ui/button"
-import { 
-    DropdownMenu, 
-    DropdownMenuContent, 
+import {
+    DropdownMenu,
+    DropdownMenuContent,
     DropdownMenuCheckboxItem,
     DropdownMenuTrigger,
     DropdownMenuSeparator,
     DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu"
-import { 
-    LayoutGrid, 
-    Table as TableIcon, 
+import {
+    LayoutGrid,
+    Table as TableIcon,
     List,
     Columns,
     Download,
@@ -22,6 +22,7 @@ import {
     GitCompare,
     X,
 } from "lucide-react"
+import { Checkbox } from "@/components/ui/checkbox"
 import { cn } from "@/lib/utils"
 import { ViewMode } from "@/types"
 import { columnLabels } from "./columns"
@@ -34,6 +35,8 @@ interface TableToolbarProps {
     visibleColumns: string[]
     onColumnVisibilityChange: (columnId: string, visible: boolean) => void
     onExport: (format: 'csv' | 'excel' | 'pdf', selectedOnly: boolean) => void
+    exportAll: boolean
+    onExportAllChange: (exportAll: boolean) => void
     onCompare: () => void
     onClearFilters?: () => void
     hasActiveFilters?: boolean
@@ -70,6 +73,8 @@ export function TableToolbar({
     visibleColumns,
     onColumnVisibilityChange,
     onExport,
+    exportAll,
+    onExportAllChange,
     onCompare,
     onClearFilters,
     hasActiveFilters,
@@ -117,7 +122,7 @@ export function TableToolbar({
                         <span className="hidden sm:inline">Limpar Filtros</span>
                     </Button>
                 )}
-                
+
                 {/* Seletor de colunas */}
                 <DropdownMenu>
                     <DropdownMenuTrigger asChild>
@@ -149,14 +154,36 @@ export function TableToolbar({
                             <span className="hidden sm:inline">Exportar</span>
                         </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-48">
+                    <DropdownMenuContent align="end" className="w-56">
                         <DropdownMenuLabel>
-                            {selectedCount > 0 
+                            {selectedCount > 0
                                 ? `Exportar ${selectedCount} selecionado${selectedCount > 1 ? 's' : ''}`
-                                : 'Exportar página atual'
+                                : exportAll ? 'Exportar todos os resultados' : 'Exportar página atual'
                             }
                         </DropdownMenuLabel>
+
                         <DropdownMenuSeparator />
+
+                        <div className="px-2 py-1.5 flex items-center gap-2">
+                            <Checkbox
+                                id="export-all"
+                                checked={exportAll}
+                                onCheckedChange={(checked) => onExportAllChange(checked === true)}
+                                disabled={selectedCount > 0}
+                            />
+                            <label
+                                htmlFor="export-all"
+                                className={cn(
+                                    "text-xs font-medium cursor-pointer",
+                                    selectedCount > 0 && "opacity-50 cursor-not-allowed"
+                                )}
+                            >
+                                Exportar todos os resultados
+                            </label>
+                        </div>
+
+                        <DropdownMenuSeparator />
+
                         <Button
                             variant="ghost"
                             size="sm"

@@ -3,6 +3,7 @@ Serviço para cálculo de status de projetos.
 """
 from typing import Dict, Any, Optional, List
 from sqlalchemy.orm import Session
+from sqlalchemy import func, or_
 from datetime import datetime, timedelta
 from app.models.protheus import CTT010, SE2010
 from app.models.project_status import ProjectStatus
@@ -97,27 +98,42 @@ class ProjectStatusService:
         # 1. Calculate stats for all projects
         # 2. Subtract finalized projects from rendering_accounts
         
-        # Calculate in_execution (projects where start <= today <= end)
+        # Calculate in_execution (projects where start <= today <= end AND NOT finalized)
+        # Priorities: 1. Finalized, 2. In Execution (Vigência), 3. Closed (ERP), 4. Rendering Accounts
         in_execution_query = base_query.filter(
             CTT010.CTT_DTINI <= today_str,
             CTT010.CTT_DTFIM >= today_str
         )
+        if finalized_custos:
+             in_execution_query = in_execution_query.filter(~CTT010.CTT_CUSTO.in_(list(finalized_custos)))
         in_execution_count = in_execution_query.count()
         
-        # Calculate ending_soon (in execution AND ending within 30 days)
-        ending_soon_query = base_query.filter(
-            CTT010.CTT_DTINI <= today_str,
-            CTT010.CTT_DTFIM >= today_str,
+        # Calculate ending_soon (subset of in_execution)
+        ending_soon_query = in_execution_query.filter(
             CTT010.CTT_DTFIM <= thirty_days_later_str
         )
         ending_soon_count = ending_soon_query.count()
         
-        # Calculate not_started (start > today)
-        not_started_query = base_query.filter(CTT010.CTT_DTINI > today_str)
+        # Calculate not_started (start > today AND NOT finalized)
+        not_started_query = base_query.filter(
+            CTT010.CTT_DTINI > today_str
+        )
+        if finalized_custos:
+            not_started_query = not_started_query.filter(~CTT010.CTT_CUSTO.in_(list(finalized_custos)))
         not_started_count = not_started_query.count()
         
-        # Calculate rendering_accounts (end < today AND not finalized)
-        rendering_query = base_query.filter(CTT010.CTT_DTFIM < today_str)
+        # Calculate rendering_accounts (end < today AND not finalized AND not closed AND not in execution)
+        # Exclude in_execution (already implicitly excluded by DTFIM < today)
+        # Exclude finalized
+        rendering_query = base_query.filter(
+            CTT010.CTT_DTFIM < today_str,
+            or_(
+                CTT010.CTT_DTENC.is_(None),
+                CTT010.CTT_DTENC == '',
+                func.len(CTT010.CTT_DTENC) != 8,
+                CTT010.CTT_DTENC > today_str
+            )
+        )
         
         # Get all rendering projects to filter out finalized ones
         rendering_projects = rendering_query.with_entities(CTT010.CTT_CUSTO).all()
@@ -127,22 +143,48 @@ class ProjectStatusService:
         non_finalized_rendering = rendering_custos - finalized_custos
         rendering_accounts_count = len(non_finalized_rendering)
         
-        # Calculate rendering_accounts_60days (ended in last 60 days AND not finalized)
+        # Calculate rendering_accounts_60days (ended in last 60 days AND not finalized AND not closed - CTT_DTENC > hoje ou vazio)
         rendering_60days_query = base_query.filter(
             CTT010.CTT_DTFIM < today_str,
-            CTT010.CTT_DTFIM >= sixty_days_ago_str
+            CTT010.CTT_DTFIM >= sixty_days_ago_str,
+            or_(
+                CTT010.CTT_DTENC.is_(None),
+                CTT010.CTT_DTENC == '',
+                func.len(CTT010.CTT_DTENC) != 8,
+                CTT010.CTT_DTENC > today_str
+            )
         )
         rendering_60days_projects = rendering_60days_query.with_entities(CTT010.CTT_CUSTO).all()
         rendering_60days_custos = {str(p.CTT_CUSTO).strip() for p in rendering_60days_projects if p.CTT_CUSTO}
         non_finalized_rendering_60days = rendering_60days_custos - finalized_custos
         rendering_accounts_60days_count = len(non_finalized_rendering_60days)
         
+        # Finalized count (extra info for consistency)
+        finalized_count = len(finalized_custos) if finalized_custos else 0
+        
+        # Closed count (projetos com CTT_DTENC preenchido E data <= hoje) - EXCLUINDO finalizados e In Execution
+        closed_query = base_query.filter(
+            CTT010.CTT_DTENC.isnot(None),
+            CTT010.CTT_DTENC != '',
+            func.len(CTT010.CTT_DTENC) == 8,
+            CTT010.CTT_DTENC <= today_str,
+            or_(
+                func.trim(CTT010.CTT_DTINI) > today_str,
+                func.trim(CTT010.CTT_DTFIM) < today_str
+            )
+        )
+        if finalized_custos:
+            closed_query = closed_query.filter(~CTT010.CTT_CUSTO.in_(list(finalized_custos)))
+        closed_count = closed_query.count()
+
         status_stats = {
             "in_execution": in_execution_count,
             "ending_soon": ending_soon_count,
             "rendering_accounts": rendering_accounts_count,
             "rendering_accounts_60days": rendering_accounts_60days_count,
-            "not_started": not_started_count
+            "not_started": not_started_count,
+            "finalized": finalized_count,
+            "closed": closed_count
         }
         
         cache.set(cache_key, status_stats, ttl_seconds=ProjectStatusService.CACHE_TTL)
@@ -174,10 +216,17 @@ class ProjectStatusService:
             d_end = end_date.replace("-", "")
             filters.append(CTT010.CTT_DTINI <= d_end)
         
+        finalized_custos = ProjectStatusService._get_finalized_custos(db)
+        
         query = db.query(CTT010).filter(
             CTT010.CTT_DTINI <= today_str,
             CTT010.CTT_DTFIM >= today_str
         )
+        # Priority: Vigência takes precedence over ERP Closed.
+        # Still excludes internally finalized as those are explicitly marked as completed.
+        if finalized_custos:
+            query = query.filter(~CTT010.CTT_CUSTO.in_(list(finalized_custos)))
+            
         if filters:
             query = query.filter(*filters)
         

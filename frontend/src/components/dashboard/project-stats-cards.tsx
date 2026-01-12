@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ProjectStats } from '@/types';
-import { Briefcase, CheckCircle2, AlertTriangle, PlayCircle, ChevronDown, ChevronUp, Info } from 'lucide-react';
+import { Briefcase, CheckCircle2, AlertTriangle, PlayCircle, ChevronDown, ChevronUp, Info, Lock } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface ProjectStatsCardsProps {
@@ -15,40 +15,40 @@ interface ProjectStatsCardsProps {
 // Componente para animar números
 function AnimatedNumber({ value, duration = 500 }: { value: number; duration?: number }) {
     const [displayValue, setDisplayValue] = React.useState(0);
-    
+
     React.useEffect(() => {
         let startTime: number;
         let animationFrame: number;
-        
+
         const animate = (timestamp: number) => {
             if (!startTime) startTime = timestamp;
             const progress = Math.min((timestamp - startTime) / duration, 1);
-            
+
             // Easing function for smooth animation
             const easeOutQuart = 1 - Math.pow(1 - progress, 4);
             setDisplayValue(Math.floor(easeOutQuart * value));
-            
+
             if (progress < 1) {
                 animationFrame = requestAnimationFrame(animate);
             }
         };
-        
+
         animationFrame = requestAnimationFrame(animate);
-        
+
         return () => {
             if (animationFrame) {
                 cancelAnimationFrame(animationFrame);
             }
         };
     }, [value, duration]);
-    
+
     return <span>{displayValue}</span>;
 }
 
 export function ProjectStatsCards({ stats, onFilterClick, currentFilter }: ProjectStatsCardsProps) {
     const [isLoaded, setIsLoaded] = React.useState(false);
     const [expandedCards, setExpandedCards] = React.useState<Set<string>>(new Set());
-    
+
     React.useEffect(() => {
         // Trigger animation after mount
         const timer = setTimeout(() => setIsLoaded(true), 100);
@@ -66,7 +66,7 @@ export function ProjectStatsCards({ stats, onFilterClick, currentFilter }: Proje
             return newSet;
         });
     };
-    
+
     if (!stats) {
         // Loading skeleton
         return (
@@ -128,26 +128,26 @@ export function ProjectStatsCards({ stats, onFilterClick, currentFilter }: Proje
             subtext: "Projetos encerrados"
         },
         {
-            title: "Finalizados",
-            value: stats.finalized || 0,
-            icon: CheckCircle2,
-            filterValue: 'finalized',
-            color: "text-purple-600",
-            bg: "bg-purple-50",
-            border: "border-purple-200",
-            hoverBorder: "hover:border-purple-300",
-            description: "Projetos com status verificado como finalizado",
-            detailedInfo: `Total: ${stats.finalized || 0} projetos\n\nProjetos que foram marcados como finalizados no sistema. Estes projetos já passaram por verificação e foram oficialmente finalizados.`,
-            subtext: "Status verificado"
+            title: "Encerrados",
+            value: stats.closed || 0,
+            icon: Lock,
+            filterValue: 'closed',
+            color: "text-gray-600",
+            bg: "bg-gray-50",
+            border: "border-gray-200",
+            hoverBorder: "hover:border-gray-300",
+            description: "Projetos encerrados (com CTT_DTENC preenchido)",
+            detailedInfo: `Total: ${stats.closed || 0} projetos\n\nProjetos que possuem data de encerramento (CTT_DTENC) preenchida. Estes projetos já foram encerrados e não precisam prestar contas.`,
+            subtext: "Projetos encerrados"
         }
     ];
 
-        return (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-stretch relative">
+    return (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-stretch relative">
             {cards.map((card, index) => {
                 const isActive = currentFilter === card.filterValue;
                 const isExpanded = expandedCards.has(card.title);
-                
+
                 return (
                     <div
                         key={card.title}
@@ -160,7 +160,7 @@ export function ProjectStatsCards({ stats, onFilterClick, currentFilter }: Proje
                             transitionDelay: isLoaded ? `${index * 75}ms` : '0ms'
                         }}
                     >
-                        <Card 
+                        <Card
                             className={cn(
                                 "border-2 group relative overflow-visible",
                                 "transition-all duration-300 ease-out",
@@ -173,13 +173,13 @@ export function ProjectStatsCards({ stats, onFilterClick, currentFilter }: Proje
                             onClick={() => onFilterClick?.(card.filterValue)}
                         >
                             {/* Highlight indicator for active state */}
-                            <div 
+                            <div
                                 className={cn(
                                     "absolute left-0 top-0 bottom-0 w-1 transition-all duration-300",
                                     isActive ? card.color.replace('text-', 'bg-') : "bg-transparent"
                                 )}
                             />
-                            
+
                             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                                 <CardTitle className="text-sm font-medium flex items-center gap-1.5">
                                     {card.title}
@@ -205,7 +205,7 @@ export function ProjectStatsCards({ stats, onFilterClick, currentFilter }: Proje
                                     <p className="text-xs text-muted-foreground mt-1.5">
                                         {card.subtext}
                                     </p>
-                                    
+
                                     {/* Progress indicator showing percentage of total */}
                                     {card.filterValue !== 'all' && stats.total > 0 && (
                                         <div className="mt-3 pt-2 border-t">
@@ -213,12 +213,12 @@ export function ProjectStatsCards({ stats, onFilterClick, currentFilter }: Proje
                                                 <span>{((card.value / stats.total) * 100).toFixed(0)}% do total</span>
                                             </div>
                                             <div className="h-1 mt-1 bg-muted rounded-full overflow-hidden">
-                                                <div 
+                                                <div
                                                     className={cn(
                                                         "h-full rounded-full transition-all duration-500 ease-out",
                                                         card.color.replace('text-', 'bg-')
                                                     )}
-                                                    style={{ 
+                                                    style={{
                                                         width: `${(card.value / stats.total) * 100}%`,
                                                         transitionDelay: `${index * 100 + 300}ms`
                                                     }}
@@ -236,8 +236,8 @@ export function ProjectStatsCards({ stats, onFilterClick, currentFilter }: Proje
                                             "text-xs font-medium transition-all duration-200",
                                             "hover:bg-muted/50 active:scale-[0.98]",
                                             "border border-dashed",
-                                            isExpanded 
-                                                ? cn("bg-muted/30", card.border.replace('border-', 'border-')) 
+                                            isExpanded
+                                                ? cn("bg-muted/30", card.border.replace('border-', 'border-'))
                                                 : "border-muted-foreground/20 hover:border-muted-foreground/40",
                                             card.color
                                         )}
@@ -265,7 +265,7 @@ export function ProjectStatsCards({ stats, onFilterClick, currentFilter }: Proje
 
                         {/* Informações detalhadas sobrepostas ao card */}
                         {isExpanded && (
-                            <Card 
+                            <Card
                                 className={cn(
                                     "absolute top-full left-0 right-0 mt-2 border-2",
                                     "transition-all duration-300 shadow-2xl",

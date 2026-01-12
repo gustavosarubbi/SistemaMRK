@@ -137,32 +137,9 @@ class Settings:
 
     @property
     def SQLALCHEMY_DATABASE_URI_AUDIT(self) -> str:
-        if not self.LOCAL_DB_SERVER:
-            return "sqlite:///./audit.db"
-        
-        # Validate required credentials - but allow None for optional development
-        if not self.LOCAL_DB_USER or not self.LOCAL_DB_PASSWORD:
-            logger.warning(
-                "LOCAL_DB_USER and/or LOCAL_DB_PASSWORD are not set. "
-                "Audit database connections will fail. Please set these in your .env file."
-            )
-            # Return a connection string that will fail gracefully
-            driver = "ODBC Driver 17 for SQL Server"
-            params = f"DRIVER={{{driver}}};SERVER={self.LOCAL_DB_SERVER},{self.LOCAL_DB_PORT};DATABASE={self.LOCAL_DB_NAME_AUDIT};UID=None;PWD=None"
-            return f"mssql+pyodbc:///?odbc_connect={params}"
-            
-        driver = "ODBC Driver 17 for SQL Server"
-        params = f"DRIVER={{{driver}}};SERVER={self.LOCAL_DB_SERVER},{self.LOCAL_DB_PORT};DATABASE={self.LOCAL_DB_NAME_AUDIT};UID={self.LOCAL_DB_USER};PWD={self.LOCAL_DB_PASSWORD}"
-        
-        if self.LOCAL_DB_ENCRYPT:
-            params += ";Encrypt=yes"
-        else:
-            params += ";Encrypt=no"
-            
-        if self.LOCAL_DB_TRUST_SERVER_CERTIFICATE:
-            params += ";TrustServerCertificate=yes"
-            
-        return f"mssql+pyodbc:///?odbc_connect={params}"
+        # ForÃ§ar o uso de SQLite para a auditoria para garantir que seja 100% local
+        # e nÃ£o interfira no SQL Server (especialmente versÃµes legadas como 2008)
+        return "sqlite:///./audit.db"
 
 settings = Settings()
 
