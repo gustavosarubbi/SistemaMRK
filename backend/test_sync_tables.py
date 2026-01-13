@@ -8,7 +8,7 @@ from app.db.session import engine_local
 from sqlalchemy import text
 
 if __name__ == "__main__":
-    tables_to_test = ["CTT010", "PAD010", "SC6010"]
+    tables_to_test = ["CTT010", "PAD010", "SC6010", "SE1010", "SE2010"]
     
     for table_name in tables_to_test:
         print(f"\n{'='*60}")

@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 class SyncService:
     def __init__(self):
-        self.tables = ["CTT010", "PAD010", "SC6010", "SE2010"]
+        self.tables = ["CTT010", "PAD010", "SC6010", "SE1010", "SE2010"]
         self.control_table = "SYNC_CONTROL"
         self._ensure_control_table()
 
@@ -101,11 +101,12 @@ class SyncService:
                 logger.info(f"Found primary key columns: {', '.join(pk_columns)}")
             else:
                 # Fallback: Use model definitions for primary keys
-                from app.models.protheus import CTT010, PAD010, SC6010, SE2010
+                from app.models.protheus import CTT010, PAD010, SC6010, SE1010, SE2010
                 pk_map = {
                     "CTT010": ["CTT_CUSTO"],
                     "PAD010": ["R_E_C_N_O_"],
                     "SC6010": ["R_E_C_N_O_"],
+                    "SE1010": ["R_E_C_N_O_"],
                     "SE2010": ["R_E_C_N_O_"]
                 }
                 if table_name in pk_map:
@@ -138,7 +139,7 @@ class SyncService:
                 
                 if is_numeric:
                     # For SE2010 table, convert ALL numeric to Float to avoid precision issues
-                    if table_name == "SE2010":
+                    if table_name in ["SE1010", "SE2010"]:
                         needs_float_conversion = True
                         col_type = Float()
                     else:
@@ -187,7 +188,7 @@ class SyncService:
                             # Insert remaining batch
                             if batch:
                                 try:
-                                    use_raw_sql = table_name in ["SE2010", "CTT010", "PAD010", "SC6010"] or any(numeric_columns.values())
+                                    use_raw_sql = table_name in ["SE1010", "SE2010", "CTT010", "PAD010", "SC6010"] or any(numeric_columns.values())
                                     
                                     if use_raw_sql:
                                         # Use raw SQL for remaining batch
@@ -248,7 +249,7 @@ class SyncService:
                                     try:
                                         # Use raw SQL with executemany for tables with numeric precision issues
                                         # This gives us full control over type conversion
-                                        use_raw_sql = table_name in ["SE2010", "CTT010", "PAD010", "SC6010"] or any(numeric_columns.values())
+                                        use_raw_sql = table_name in ["SE1010", "SE2010", "CTT010", "PAD010", "SC6010"] or any(numeric_columns.values())
                                         
                                         if use_raw_sql:
                                             # Build INSERT statement
@@ -290,7 +291,7 @@ class SyncService:
                                         # Try inserting one by one if batch fails
                                         for single_row in batch:
                                             try:
-                                                use_raw_sql = table_name in ["SE2010", "CTT010", "PAD010", "SC6010"] or any(numeric_columns.values())
+                                                use_raw_sql = table_name in ["SE1010", "SE2010", "CTT010", "PAD010", "SC6010"] or any(numeric_columns.values())
                                                 
                                                 if use_raw_sql:
                                                     # Use raw SQL for single row too

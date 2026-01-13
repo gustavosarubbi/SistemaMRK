@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Float, Date, Integer
+from sqlalchemy import Column, String, Float, Date, Integer, Numeric
 from app.models.base import Base
 
 class CTT010(Base):
@@ -57,11 +57,24 @@ class SC6010(Base):
     C6_FILIAL = Column(String(2))
     C6_CUSTO = Column(String(50), index=True)  # ID Projeto
     C6_PRCVEN = Column(Float)  # Valor da Parcela
+    C6_VALOR = Column(Float)   # Valor Total (requested field)
     C6_ITEM = Column(String(10))  # Número Parcela
     C6_SERIE = Column(String(3))  # Série (condicional - se vazio, não somar)
     C6_NOTA = Column(String(9))  # Nota (condicional - se vazio, não somar)
     C6_DATFAT = Column(String(8))  # Data de Faturamento (formato YYYYMMDD)
     C6_DESCRI = Column(String(200))  # Descrição da Parcela
+
+class SE1010(Base):
+    __tablename__ = "SE1010"
+    
+    R_E_C_N_O_ = Column(Integer, primary_key=True, autoincrement=False)
+    D_E_L_E_T_ = Column(String(1))
+    
+    E1_FILIAL = Column(String(2))
+    E1_CUSTO = Column(String(50), index=True) # ID Projeto
+    E1_VALOR = Column(Float)
+    E1_BAIXA = Column(String(8)) # Data de Baixa
+    E1_NOTA = Column(String(9))
 
 class SE2010(Base):
     __tablename__ = "SE2010"
