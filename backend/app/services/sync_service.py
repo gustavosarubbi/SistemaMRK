@@ -12,6 +12,62 @@ class SyncService:
         self.tables = ["CTT010", "PAD010", "SC6010", "SE1010", "SE2010"]
         self.control_table = "SYNC_CONTROL"
         self._ensure_control_table()
+        self.cost_centers = self.load_cost_centers()
+
+    def load_cost_centers(self):
+        """Load cost centers from Escopo_Projetos.md in root directory."""
+        try:
+            # Encontrar o arquivo subindo a árvore de diretórios
+            import os
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            temp_dir = current_dir
+            file_path = None
+            
+            for _ in range(5):
+                check_path = os.path.join(temp_dir, "Escopo_Projetos.md")
+                if os.path.exists(check_path):
+                    file_path = check_path
+                    break
+                temp_dir = os.path.dirname(temp_dir)
+            
+            if not file_path:
+                logger.warning(f"Escopo_Projetos.md not found starting from {current_dir}")
+                return []
+                
+            logger.info(f"Loading cost centers from {file_path}")
+            with open(file_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            
+            lines = content.splitlines()
+            centers = []
+            for line in lines:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                
+                # Aceita linhas que começam com "-" (lista markdown) ou códigos diretos
+                clean_line = line
+                if line.startswith("- "):
+                    clean_line = line[2:].strip()
+                
+                # Pode haver múltiplos códigos separados por vírgula ou espaço
+                parts = clean_line.replace(",", " ").split()
+                for p in parts:
+                    p_clean = "".join(c for c in p if c.isdigit())
+                    # Apenas aceita se for numérico ou começar com letras de centro de custo (ex: DOA)
+                    # Mas evita "CENTRO", "DE", "CUSTO"
+                    # Se limpou tudo e ficou vazio, ignora
+                    if p_clean and len(p_clean) >= 3:
+                         centers.append(p_clean)
+            
+            unique_centers = sorted(list(set(centers)))
+            logger.info(f"Loaded {len(unique_centers)} cost centers from Escopo_Projetos.md")
+            if unique_centers:
+                logger.info(f"Sample cost centers: {unique_centers[:5]}")
+            return unique_centers
+        except Exception as e:
+            logger.error(f"Error loading cost centers: {e}")
+            return []
 
     def _ensure_control_table(self):
         """Create sync control table if not exists."""
@@ -61,10 +117,17 @@ class SyncService:
         except Exception as e:
             logger.error(f"Error updating sync status: {e}")
 
+    def reload_cost_centers(self):
+        """Force reload of cost centers."""
+        self.cost_centers = self.load_cost_centers()
+
     def sync_all(self, force: bool = False):
-        logger.info("Starting Sync Process (Smart Cache)...")
+        logger.info("Starting Sync Process (Smart Cache + Cost Center Filter)...")
+        self.reload_cost_centers()
         
         try:
+            if not self.cost_centers:
+                logger.warning("No cost centers found in Escopo_Projetos.md. Sync will continue without filters or might be empty.")
             for table_name in self.tables:
                 if force or self.should_sync(table_name, cache_duration_minutes=60 * 24): # 24h cache by default
                     success = self._sync_table_streaming(table_name)
@@ -162,6 +225,11 @@ class SyncService:
                 numeric_columns[col_name] = needs_float_conversion
                 safe_columns.append(Column(col_name, col_type, primary_key=is_primary, autoincrement=False, nullable=True))
 
+            # MANUAL ADDITION: Add E1_NUM to SE1010 if it's not already there
+            if table_name == "SE1010" and not any(c.name == "E1_NUM" for c in safe_columns):
+                logger.info("Manually adding E1_NUM column to SE1010 schema")
+                safe_columns.append(Column("E1_NUM", String(9), index=True, nullable=True))
+
             local_table = Table(table_name, local_metadata, *safe_columns)
             
             # Drop and Create
@@ -172,14 +240,24 @@ class SyncService:
             col_names = [c.name for c in local_table.columns]
             cols_str = ", ".join([f"[{c}]" for c in col_names])
             
+            # --- Cost Center Filtering ---
+            custo_cols = {
+                "CTT010": "CTT_CUSTO",
+                "PAD010": "PAD_CUSTO",
+                "SC6010": "C6_CUSTO",
+                "SE1010": "E1_CUSTO",
+                "SE2010": "E2_CUSTO"
+            }
+            custo_col = custo_cols.get(table_name)
+            
             # Use bulk insert for better performance
             # Smaller chunk size for large tables to avoid memory issues
             chunk_size = 5000 if len(col_names) > 50 else 20000
             total_rows = 0
             
-            with engine_remote.connect() as remote_conn:
-                result_proxy = remote_conn.execution_options(stream_results=True).execute(text(f"SELECT * FROM {table_name}"))
-                
+            # Function to process a batch of results
+            def process_results(result_proxy):
+                nonlocal total_rows
                 with engine_local.begin() as local_conn:
                     batch = []
                     while True:
@@ -241,6 +319,10 @@ class SyncService:
                                             row_dict[col_name] = None
                                     else:
                                         row_dict[col_name] = value
+                                
+                                # MANUAL MAPPING: Map E1_NOTA to E1_NUM for SE1010
+                                if table_name == "SE1010":
+                                    row_dict["E1_NUM"] = row_dict.get("E1_NOTA")
                                 
                                 batch.append(row_dict)
                                 
@@ -325,6 +407,38 @@ class SyncService:
                             except Exception as row_error:
                                 logger.warning(f"Error processing row in {table_name}: {row_error}")
                                 continue
+
+            # Execution logic: Batching cost centers
+            with engine_remote.connect() as remote_conn:
+                if custo_col and self.cost_centers:
+                    # Split cost centers into chunks of 50
+                    chunk_size_cc = 50
+                    chunks = [self.cost_centers[i:i + chunk_size_cc] for i in range(0, len(self.cost_centers), chunk_size_cc)]
+                    
+                    for i, chunk in enumerate(chunks):
+                        logger.info(f"Processing chunk {i+1}/{len(chunks)} with {len(chunk)} cost centers...")
+                        placeholders = [f":c{k}" for k in range(len(chunk))]
+                        where_clause = f" WHERE {custo_col} IN ({', '.join(placeholders)})"
+                        query_params = {f"c{k}": c for k, c in enumerate(chunk)}
+                        
+                        query = text(f"SELECT * FROM {table_name}" + where_clause)
+                        result_proxy = remote_conn.execution_options(stream_results=True).execute(query, query_params)
+                        process_results(result_proxy)
+                        
+                elif custo_col:
+                    # No cost centers but valid table -> Empty result (Security default)
+                    logger.warning(f"No cost centers found for {table_name}. Returning empty dataset.")
+                else:
+                    # No filter column -> Fetch everything (Unusual for this task but kept for safety)
+                    # OR we could enforce that all tables must be filtered now.
+                    # Given the user request "all tables practically have a _CUSTO", we should potentially warn if not.
+                    # TABLES without mapped column (none in current list) will fall here and sync EVERYTHING.
+                    query = text(f"SELECT * FROM {table_name}")
+                    result_proxy = remote_conn.execution_options(stream_results=True).execute(query)
+                    process_results(result_proxy)
+
+
+
             
             logger.info(f"Finished syncing {table_name}. Total: {total_rows}")
             return True

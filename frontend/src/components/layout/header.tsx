@@ -21,6 +21,7 @@ export function Header() {
     const navItems = [
         { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
         { href: "/dashboard/projects", label: "Projetos", icon: FolderKanban },
+        { href: "/dashboard/faturamento", label: "Faturamento", icon: LayoutDashboard },
         { href: "/dashboard/validation", label: "Validação", icon: ShieldCheck },
         { href: "/dashboard/auditoria", label: "Auditoria", icon: ShieldCheck },
     ];

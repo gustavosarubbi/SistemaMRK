@@ -74,7 +74,7 @@ class SE1010(Base):
     E1_CUSTO = Column(String(50), index=True) # ID Projeto
     E1_VALOR = Column(Float)
     E1_BAIXA = Column(String(8)) # Data de Baixa
-    E1_NOTA = Column(String(9))
+    E1_NUM = Column(String(9), index=True) # Número da Nota
 
 class SE2010(Base):
     __tablename__ = "SE2010"
